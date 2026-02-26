@@ -63,7 +63,8 @@ window.GoSati = {
         }
 
         btn.disabled = true;
-        btn.textContent = 'Consultando...';
+        btn.innerHTML = '<span class="btn-loading-dots"><span></span><span></span><span></span></span> Consultando...';
+        btn.classList.add('btn-loading');
 
         try {
             const result = await API.queryGoSati(sessionId, data);
@@ -81,7 +82,8 @@ window.GoSati = {
             Utils.toast('Erro GoSATI: ' + e.message, 'error');
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Consultar GoSATI';
+            btn.classList.remove('btn-loading');
+            btn.innerHTML = 'Consultar GoSATI';
         }
     },
 
@@ -171,7 +173,8 @@ window.GoSati = {
         }
 
         btn.disabled = true;
-        btn.textContent = 'Baixando...';
+        btn.innerHTML = '<span class="btn-loading-dots"><span></span><span></span><span></span></span> Baixando...';
+        btn.classList.add('btn-loading');
 
         try {
             const result = await API.downloadComprovantes(sessionId, links);
@@ -181,7 +184,8 @@ window.GoSati = {
             Utils.toast('Erro ao baixar: ' + e.message, 'error');
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Baixar Selecionados';
+            btn.classList.remove('btn-loading');
+            btn.innerHTML = 'Baixar Selecionados';
         }
     }
 };

@@ -6,7 +6,9 @@ from sqlmodel import select
 
 from app.core.exceptions import NotFoundError
 from app.models.session import Session
+from app.models.chat_message import ChatMessage as ChatMessageRecord
 from app.schemas.session import SessionCreate
+from app.services.chat_service import clear_session_cache
 
 logger = logging.getLogger(__name__)
 
@@ -34,5 +36,12 @@ class SessionService:
 
     async def delete(self, session_id: int) -> None:
         session = await self.get_by_id(session_id)
+        # Remove mensagens de chat associadas
+        stmt = select(ChatMessageRecord).where(ChatMessageRecord.session_id == session_id)
+        result = await self.db.execute(stmt)
+        for msg in result.scalars().all():
+            await self.db.delete(msg)
         await self.db.delete(session)
         await self.db.commit()
+        # Limpa cache em memória
+        clear_session_cache(session_id)

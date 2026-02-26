@@ -12,7 +12,7 @@ async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 async def init_db():
     """Cria todas as tabelas no banco."""
-    from app.models import Skill, SkillStep, SkillExample, Session, Source  # noqa: F401
+    from app.models import Skill, SkillStep, SkillExample, Session, Source, ChatMessage  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

@@ -7,17 +7,19 @@ from typing import AsyncGenerator
 from google import genai
 from google.genai.types import Content, Part
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
 from app.core.config import Settings
+from app.models.chat_message import ChatMessage as ChatMessageRecord
 from app.services.skill_service import SkillService
 from app.services.source_service import SourceService
 
 logger = logging.getLogger(__name__)
 
-# Cache em memória (por session)
-_chat_histories: dict[int, list[Content]] = defaultdict(list)
+# Cache em memória (por session) — apenas para docs e contexto Gemini
 _document_cache: dict[int, dict[int, dict]] = defaultdict(dict)
 _sent_docs: dict[int, set[int]] = defaultdict(set)  # docs já enviados ao Gemini
+_gemini_contents: dict[int, list[Content]] = defaultdict(list)  # contexto Gemini em memória
 
 # Limite de binários (imagens) enviados por turno ao Gemini
 MAX_BINARY_BYTES_PER_TURN = 15 * 1024 * 1024  # 15 MB
@@ -25,11 +27,11 @@ MAX_BINARY_FILES_PER_TURN = 30
 
 
 def clear_session_cache(session_id: int) -> None:
-    """Limpa todo o cache em memória de uma sessão (histórico, docs, sent)."""
-    _chat_histories.pop(session_id, None)
+    """Limpa todo o cache em memória de uma sessão (docs, sent, contexto Gemini)."""
+    _gemini_contents.pop(session_id, None)
     _document_cache.pop(session_id, None)
     _sent_docs.pop(session_id, None)
-    logger.info("Cache limpo para sessão %d", session_id)
+    logger.info("Cache em memória limpo para sessão %d", session_id)
 
 
 class ChatService:
@@ -53,10 +55,35 @@ class ChatService:
         async for chunk in self._generate(session_id, message, skill_id=skill_id):
             yield chunk
 
+    async def _ensure_gemini_context(self, session_id: int) -> None:
+        """Carrega histórico do banco para o contexto Gemini se ainda não estiver em memória."""
+        if _gemini_contents.get(session_id):
+            return  # já carregado
+        stmt = (
+            select(ChatMessageRecord)
+            .where(ChatMessageRecord.session_id == session_id)
+            .order_by(ChatMessageRecord.created_at)
+        )
+        result = await self.db.execute(stmt)
+        messages = result.scalars().all()
+        for msg in messages:
+            _gemini_contents[session_id].append(
+                Content(role=msg.role, parts=[Part(text=msg.text)])
+            )
+
+    async def _save_message(self, session_id: int, role: str, text: str) -> None:
+        """Salva uma mensagem no banco."""
+        record = ChatMessageRecord(session_id=session_id, role=role, text=text)
+        self.db.add(record)
+        await self.db.commit()
+
     async def _generate(
         self, session_id: int, message: str, skill_id: int | None
     ) -> AsyncGenerator[str, None]:
         """Gera resposta via Gemini com streaming."""
+        # Garante que o contexto Gemini está carregado do banco
+        await self._ensure_gemini_context(session_id)
+
         # Monta system instruction
         system_instruction = "Você é um assistente especializado em análise de dados."
         if skill_id:
@@ -116,9 +143,12 @@ class ChatService:
 
         # Monta mensagem do usuário com docs novos
         user_parts = doc_parts + [Part(text=message)]
-        _chat_histories[session_id].append(
+        _gemini_contents[session_id].append(
             Content(role="user", parts=user_parts)
         )
+
+        # Salva mensagem do usuário no banco
+        await self._save_message(session_id, "user", message)
 
         try:
             client = genai.Client(
@@ -129,7 +159,7 @@ class ChatService:
 
             response = client.models.generate_content_stream(
                 model=self.settings.gemini_model,
-                contents=_chat_histories[session_id],
+                contents=_gemini_contents[session_id],
                 config={
                     "system_instruction": system_instruction,
                     "temperature": self.settings.gemini_temperature,
@@ -143,22 +173,34 @@ class ChatService:
                     full_response += chunk.text
                     yield f"data: {json.dumps({'text': chunk.text})}\n\n"
 
-            # Salva resposta no histórico
-            _chat_histories[session_id].append(
+            # Salva resposta no contexto Gemini e no banco
+            _gemini_contents[session_id].append(
                 Content(role="model", parts=[Part(text=full_response)])
             )
+            await self._save_message(session_id, "model", full_response)
             yield "data: [DONE]\n\n"
 
         except Exception as e:
             logger.error(f"Erro no Gemini: {e}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
-    def get_history(self, session_id: int) -> list[dict]:
-        """Retorna histórico do chat."""
-        history = []
-        for content in _chat_histories.get(session_id, []):
-            history.append({
-                "role": content.role,
-                "text": content.parts[0].text if content.parts else "",
-            })
-        return history
+    async def get_history(self, session_id: int) -> list[dict]:
+        """Retorna histórico do chat persistido no banco."""
+        stmt = (
+            select(ChatMessageRecord)
+            .where(ChatMessageRecord.session_id == session_id)
+            .order_by(ChatMessageRecord.created_at)
+        )
+        result = await self.db.execute(stmt)
+        messages = result.scalars().all()
+        return [{"role": msg.role, "text": msg.text} for msg in messages]
+
+    async def clear_history(self, session_id: int) -> None:
+        """Remove todas as mensagens do chat de uma sessão do banco e da memória."""
+        stmt = select(ChatMessageRecord).where(ChatMessageRecord.session_id == session_id)
+        result = await self.db.execute(stmt)
+        messages = result.scalars().all()
+        for msg in messages:
+            await self.db.delete(msg)
+        await self.db.commit()
+        clear_session_cache(session_id)

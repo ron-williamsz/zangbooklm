@@ -47,10 +47,15 @@ async def get_history(
     settings: Settings = Depends(get_settings),
 ):
     svc = ChatService(db, settings)
-    return svc.get_history(session_id)
+    return await svc.get_history(session_id)
 
 
 @router.delete("/cache", status_code=204)
-async def reset_chat_cache(session_id: int):
-    """Limpa cache em memória do chat (histórico, documentos enviados)."""
-    clear_session_cache(session_id)
+async def reset_chat_cache(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Limpa histórico do chat no banco e cache em memória."""
+    svc = ChatService(db, settings)
+    await svc.clear_history(session_id)

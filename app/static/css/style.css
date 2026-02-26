@@ -677,6 +677,36 @@ dialog.modal h2 { margin-bottom: 16px; font-size: 1.15rem; font-weight: 500; }
     66%      { color: var(--success); filter: drop-shadow(0 0 8px var(--success)); }
 }
 
+/* Loading dots animation for buttons */
+.btn-loading {
+    animation: btn-color-cycle 2s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes btn-color-cycle {
+    0%, 100% { border-color: var(--accent); color: var(--accent); }
+    33%      { border-color: var(--accent-purple); color: var(--accent-purple); }
+    66%      { border-color: var(--success); color: var(--success); }
+}
+.btn-loading-dots {
+    display: inline-flex;
+    gap: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+.btn-loading-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.btn-loading-dots span:nth-child(2) { animation-delay: 0.15s; }
+.btn-loading-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dot-bounce {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1.2); }
+}
+
 /* ===========================================================
    ADMIN — Skills Management
    =========================================================== */
