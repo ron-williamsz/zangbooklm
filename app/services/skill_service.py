@@ -138,7 +138,18 @@ class SkillService:
     async def build_prompt(self, skill_id: int) -> str:
         """Monta o prompt completo da skill para o Gemini."""
         skill = await self.get_by_id(skill_id)
-        parts = [skill.macro_instruction]
+
+        # Injeta data atual para o modelo não alucinar datas
+        meses = [
+            "", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+            "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+        ]
+        hoje = datetime.now()
+        data_str = f"{hoje.day} de {meses[hoje.month]} de {hoje.year}"
+        parts = [
+            f"Data atual: {data_str}. Use esta data como 'Data da conferência' quando solicitado.\n",
+            skill.macro_instruction,
+        ]
 
         if skill.steps:
             parts.append("\n## Etapas de Análise\n")
