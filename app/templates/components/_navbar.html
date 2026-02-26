@@ -1,0 +1,22 @@
+<nav class="navbar">
+    <a href="/" class="navbar-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        Notebook Zang
+    </a>
+
+    {% block navbar_center %}{% endblock %}
+
+    <div class="navbar-actions">
+        {% block navbar_actions %}
+        <a href="/admin/skills" class="btn btn-outlined btn-sm">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7-3.5 5.2-3m1.6-3L17 1m-12.5 3 5.2 3m1.6 3L17 19"/>
+            </svg>
+            Configurar Skills
+        </a>
+        {% endblock %}
+    </div>
+</nav>

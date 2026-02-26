@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Notebook Zang{% endblock %}
+
+{% block navbar_center %}
+<span class="navbar-title" id="notebook-title">Carregando...</span>
+{% endblock %}
+
+{% block navbar_actions %}
+<a href="/admin/skills" class="btn btn-outlined btn-sm">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+    </svg>
+    Configurações
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="notebook-view">
+    <!-- ===== PAINEL ESQUERDO: Fontes ===== -->
+    <div class="panel panel-sources">
+        {% include "components/_source_panel.html" %}
+    </div>
+
+    <!-- ===== PAINEL CENTRAL: Chat / Conversa ===== -->
+    <div class="panel panel-chat">
+        {% include "components/_chat_panel.html" %}
+    </div>
+
+    <!-- ===== PAINEL DIREITO: Skills (Estúdio) ===== -->
+    <div class="panel panel-skills">
+        {% include "components/_skill_cards.html" %}
+    </div>
+</div>
+
+<!-- Upload Modal -->
+{% include "components/_upload_modal.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>window.SESSION_ID = {{ session_id }};</script>
+<script src="{{ url_for('static', path='js/sources.js') }}?v=2"></script>
+<script src="{{ url_for('static', path='js/gosati.js') }}?v=2"></script>
+<script src="{{ url_for('static', path='js/chat.js') }}?v=2"></script>
+<script src="{{ url_for('static', path='js/skills.js') }}?v=2"></script>
+<script src="{{ url_for('static', path='js/notebook.js') }}?v=2"></script>
+{% endblock %}

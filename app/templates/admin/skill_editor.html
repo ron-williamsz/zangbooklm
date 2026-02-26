@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Notebook Zang — Editor de Skill{% endblock %}
+
+{% block navbar_actions %}
+<a href="/admin/skills" class="btn btn-outlined btn-sm">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="m15 18-6-6 6-6"/>
+    </svg>
+    Voltar
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+    <div class="admin-header">
+        <h1 id="page-title">Nova Skill</h1>
+        <div style="display:flex; gap:8px">
+            <button class="btn btn-danger btn-sm hidden" id="btn-delete" onclick="SkillEditor.deleteSkill()">Excluir</button>
+            <button class="btn btn-primary btn-sm" onclick="SkillEditor.save()">Salvar Skill</button>
+        </div>
+    </div>
+
+    <div class="skill-editor">
+        <!-- Info Básica -->
+        <div class="skill-editor-section">
+            <h3>Informações</h3>
+            <div style="display:flex; gap:12px; margin-bottom:12px;">
+                <div class="form-group" style="width:60px">
+                    <label>Ícone</label>
+                    <input type="text" class="input" id="skill-icon" value="📋" maxlength="4" style="text-align:center; font-size:1.5rem; padding:6px;">
+                </div>
+                <div class="form-group" style="width:90px">
+                    <label>Cor</label>
+                    <input type="color" id="skill-color" value="#6366f1" style="width:100%; height:42px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-input); cursor:pointer;">
+                </div>
+                <div class="form-group" style="flex:1">
+                    <label>Nome</label>
+                    <input type="text" class="input" id="skill-name" placeholder="Ex: Análise de Prestação de Contas">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Descrição curta</label>
+                <input type="text" class="input" id="skill-desc" placeholder="Ex: Analisa documentos de prestação de contas de condomínios">
+            </div>
+        </div>
+
+        <!-- Instrução Macro -->
+        <div class="skill-editor-section">
+            <h3>Instrução Macro</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                Instrução geral que define o papel e objetivo do LLM ao executar esta skill.
+            </p>
+            <textarea class="input" id="skill-macro" rows="6" placeholder="Você é um especialista em análise contábil de condomínios. Seu objetivo é verificar se os documentos estão corretos..."></textarea>
+        </div>
+
+        <!-- Etapas -->
+        <div class="skill-editor-section">
+            <h3>Etapas Específicas</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                Defina as etapas que o LLM deve seguir ao executar a análise.
+            </p>
+            <div id="steps-list">
+                <!-- Preenchido por JS -->
+            </div>
+            <button class="btn btn-outlined btn-sm" onclick="SkillEditor.addStep()" style="margin-top:8px">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Adicionar Etapa
+            </button>
+        </div>
+
+        <!-- Exemplos -->
+        <div class="skill-editor-section">
+            <h3>Arquivos de Exemplo</h3>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                Envie arquivos que sirvam de referência para o LLM entender o formato dos dados.
+            </p>
+            <div id="examples-list">
+                <!-- Preenchido por JS -->
+            </div>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <input type="file" id="example-file" style="display:none" onchange="SkillEditor.exampleFileSelected(event)">
+                <button class="btn btn-outlined btn-sm" onclick="document.getElementById('example-file').click()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Upload Exemplo
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>window.SKILL_ID = {{ skill_id }};</script>
+<script src="{{ url_for('static', path='js/admin/skill_editor.js') }}"></script>
+{% endblock %}

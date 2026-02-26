@@ -1,0 +1,33 @@
+"""CRUD de Sessions (notebooks do usuário)."""
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.base import get_db
+from app.schemas.session import SessionCreate, SessionResponse
+from app.services.session_service import SessionService
+
+router = APIRouter(prefix="/sessions", tags=["Sessions"])
+
+
+def _svc(db: AsyncSession = Depends(get_db)) -> SessionService:
+    return SessionService(db)
+
+
+@router.get("", response_model=list[SessionResponse])
+async def list_sessions(svc: SessionService = Depends(_svc)):
+    return await svc.list_all()
+
+
+@router.post("", response_model=SessionResponse, status_code=201)
+async def create_session(data: SessionCreate, svc: SessionService = Depends(_svc)):
+    return await svc.create(data)
+
+
+@router.get("/{session_id}", response_model=SessionResponse)
+async def get_session(session_id: int, svc: SessionService = Depends(_svc)):
+    return await svc.get_by_id(session_id)
+
+
+@router.delete("/{session_id}", status_code=204)
+async def delete_session(session_id: int, svc: SessionService = Depends(_svc)):
+    await svc.delete(session_id)
