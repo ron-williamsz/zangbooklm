@@ -1,6 +1,8 @@
 """Serviço de chat com Gemini — integra Skills e Sources."""
+import asyncio
 import json
 import logging
+import time
 from collections import defaultdict
 from typing import AsyncGenerator
 
@@ -150,39 +152,53 @@ class ChatService:
         # Salva mensagem do usuário no banco
         await self._save_message(session_id, "user", message)
 
-        try:
-            client = genai.Client(
-                vertexai=True,
-                project=self.settings.gcp_project_id,
-                location=self.settings.gemini_location,
-            )
+        client = genai.Client(
+            vertexai=True,
+            project=self.settings.gcp_project_id,
+            location=self.settings.gemini_location,
+        )
 
-            response = client.models.generate_content_stream(
-                model=self.settings.gemini_model,
-                contents=_gemini_contents[session_id],
-                config={
-                    "system_instruction": system_instruction,
-                    "temperature": self.settings.gemini_temperature,
-                    "max_output_tokens": self.settings.gemini_max_output_tokens,
-                },
-            )
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content_stream(
+                    model=self.settings.gemini_model,
+                    contents=_gemini_contents[session_id],
+                    config={
+                        "system_instruction": system_instruction,
+                        "temperature": self.settings.gemini_temperature,
+                        "max_output_tokens": self.settings.gemini_max_output_tokens,
+                    },
+                )
 
-            full_response = ""
-            for chunk in response:
-                if chunk.text:
-                    full_response += chunk.text
-                    yield f"data: {json.dumps({'text': chunk.text})}\n\n"
+                full_response = ""
+                for chunk in response:
+                    if chunk.text:
+                        full_response += chunk.text
+                        yield f"data: {json.dumps({'text': chunk.text})}\n\n"
 
-            # Salva resposta no contexto Gemini e no banco
-            _gemini_contents[session_id].append(
-                Content(role="model", parts=[Part(text=full_response)])
-            )
-            await self._save_message(session_id, "model", full_response)
-            yield "data: [DONE]\n\n"
+                # Salva resposta no contexto Gemini e no banco
+                _gemini_contents[session_id].append(
+                    Content(role="model", parts=[Part(text=full_response)])
+                )
+                await self._save_message(session_id, "model", full_response)
+                yield "data: [DONE]\n\n"
+                return  # sucesso, sai do loop
 
-        except Exception as e:
-            logger.error(f"Erro no Gemini: {e}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            except Exception as e:
+                is_rate_limit = "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e)
+                if is_rate_limit and attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)  # 2s, 4s
+                    logger.warning("Gemini 429 — tentativa %d/%d, aguardando %ds...", attempt + 1, max_retries, wait)
+                    yield f"data: {json.dumps({'text': f'\\n\\n⏳ Limite de requisições atingido. Tentando novamente em {wait}s...\\n\\n'})}\n\n"
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(f"Erro no Gemini: {e}")
+                # Remove a mensagem do usuário do contexto Gemini se falhou
+                if _gemini_contents[session_id]:
+                    _gemini_contents[session_id].pop()
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                return
 
     async def get_history(self, session_id: int) -> list[dict]:
         """Retorna histórico do chat persistido no banco."""
