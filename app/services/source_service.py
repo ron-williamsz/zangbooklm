@@ -138,14 +138,19 @@ class SourceService:
     def get_content_for_llm(self, source: Source) -> tuple[bytes | str, str]:
         """Retorna o conteúdo que deve ser enviado ao Gemini.
 
-        Para nativos (PDF, imagens, txt): bytes do original + mime_type
+        Para texto (text/*, csv, json, xml, txt): string UTF-8 (leve, sem limite)
+        Para nativos binários (PDF, imagens): bytes do original + mime_type
         Para convertidos (xlsx, docx): texto extraído + text/plain
         """
-        if source.is_native and source.file_path:
-            return Path(source.file_path).read_bytes(), source.mime_type
-
+        # Se tem texto extraído/convertido, usa ele (leve)
         if source.text_path:
             return Path(source.text_path).read_text(encoding="utf-8"), "text/plain"
+
+        if source.is_native and source.file_path:
+            # Arquivos text/* devem ser retornados como string, não bytes
+            if source.mime_type and source.mime_type.startswith("text/"):
+                return Path(source.file_path).read_text(encoding="utf-8", errors="replace"), "text/plain"
+            return Path(source.file_path).read_bytes(), source.mime_type
 
         if source.file_path:
             return Path(source.file_path).read_bytes(), source.mime_type

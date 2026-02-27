@@ -141,8 +141,8 @@ window.API = {
     listComprovantes(sessionId, data) {
         return this.request('POST', `/sessions/${sessionId}/gosati/comprovantes`, { body: data });
     },
-    downloadComprovantes(sessionId, links) {
-        return this.request('POST', `/sessions/${sessionId}/gosati/comprovantes/download`, { body: { links } });
+    downloadComprovantes(sessionId, despesas) {
+        return this.request('POST', `/sessions/${sessionId}/gosati/comprovantes/download`, { body: { despesas } });
     },
     resetGoSati(sessionId) {
         return this.request('DELETE', `/sessions/${sessionId}/gosati/reset`);

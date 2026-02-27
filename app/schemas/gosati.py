@@ -46,8 +46,18 @@ class ComprovantesListResponse(BaseModel):
     total: int
 
 
+class ComprovanteLinkInfo(BaseModel):
+    link_docto: str
+    numero_lancamento: str = ""
+    historico: str = ""
+    valor: str = ""
+
+
 class ComprovantesDownloadRequest(BaseModel):
-    links: list[str] = Field(..., description="Lista de link_docto URLs para baixar")
+    links: list[str] = Field(default=[], description="Lista de link_docto URLs (legado)")
+    despesas: list[ComprovanteLinkInfo] = Field(
+        default=[], description="Lista com link + info do lançamento"
+    )
 
 
 class ComprovantesDownloadResponse(BaseModel):

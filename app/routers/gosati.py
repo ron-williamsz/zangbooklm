@@ -104,8 +104,22 @@ async def download_comprovantes(
 ):
     """Baixa comprovantes selecionados e salva como Sources do notebook."""
     svc = GoSatiService(db, settings)
+
+    # Suporte ao novo formato (despesas com info do lançamento) e legado (links)
+    if data.despesas:
+        links = [d.link_docto for d in data.despesas]
+        despesas_info = [
+            {"numero_lancamento": d.numero_lancamento, "historico": d.historico, "valor": d.valor}
+            for d in data.despesas
+        ]
+    else:
+        links = data.links
+        despesas_info = None
+
     try:
-        sources = await svc.save_comprovantes_as_sources(session_id, data.links)
+        sources = await svc.save_comprovantes_as_sources(
+            session_id, links, despesas_info=despesas_info
+        )
     except GoSatiError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

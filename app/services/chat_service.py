@@ -24,8 +24,8 @@ _sent_docs: dict[int, set[int]] = defaultdict(set)  # docs já enviados ao Gemin
 _gemini_contents: dict[int, list[Content]] = defaultdict(list)  # contexto Gemini em memória
 
 # Limite de binários (imagens) enviados por turno ao Gemini
-MAX_BINARY_BYTES_PER_TURN = 15 * 1024 * 1024  # 15 MB
-MAX_BINARY_FILES_PER_TURN = 30
+MAX_BINARY_BYTES_PER_TURN = 20 * 1024 * 1024  # 20 MB
+MAX_BINARY_FILES_PER_TURN = 50
 
 
 def clear_session_cache(session_id: int) -> None:
@@ -102,6 +102,7 @@ class ChatService:
                         "content": content,
                         "mime_type": mime_type,
                         "filename": src.filename,
+                        "label": src.label or src.filename,
                     }
                 except Exception as e:
                     logger.warning(f"Erro ao ler source {src.id}: {e}")
@@ -118,30 +119,43 @@ class ChatService:
                 else:
                     text_docs.append((src_id, doc))
 
-        # Texto sempre vai (leve)
+        # Texto sempre vai (leve) — usa label enriquecido quando disponível
         for src_id, doc in text_docs:
-            doc_parts.append(Part(text=f"[Documento: {doc['filename']}]\n{doc['content']}"))
+            doc_label = doc.get("label") or doc["filename"]
+            doc_parts.append(Part(text=f"[Documento: {doc_label}]\n{doc['content']}"))
             _sent_docs[session_id].add(src_id)
 
         # Binários com limite de tamanho e quantidade
         binary_total = 0
         binary_count = 0
-        skipped = 0
+        skipped_names = []
         for src_id, doc in binary_docs:
             size = len(doc["content"])
             if (binary_total + size > MAX_BINARY_BYTES_PER_TURN
                     or binary_count >= MAX_BINARY_FILES_PER_TURN):
-                skipped += 1
+                skipped_names.append(doc.get("label") or doc["filename"])
                 _sent_docs[session_id].add(src_id)  # marca como "enviado" para não ficar preso
                 continue
+            # Inclui label como contexto antes da imagem/PDF binário
+            doc_label = doc.get("label") or doc["filename"]
+            doc_parts.append(Part(text=f"[Comprovante: {doc_label}]"))
             doc_parts.append(Part.from_bytes(data=doc["content"], mime_type=doc["mime_type"]))
             binary_total += size
             binary_count += 1
             _sent_docs[session_id].add(src_id)
 
-        if skipped:
-            doc_parts.append(Part(text=f"[Nota: {skipped} arquivo(s) binário(s) omitidos por limite de tamanho]"))
-            logger.warning("Sessão %d: %d binários omitidos (limite %d MB)", session_id, skipped, MAX_BINARY_BYTES_PER_TURN // (1024*1024))
+        if skipped_names:
+            doc_parts.append(Part(text=(
+                f"[ATENÇÃO: {len(skipped_names)} comprovante(s) binário(s) NÃO foram incluídos "
+                f"por limite de tamanho. NÃO analise, NÃO invente e NÃO extrapole dados sobre "
+                f"comprovantes que não foram fornecidos. Analise SOMENTE os documentos acima. "
+                f"Se um lançamento não possui comprovante visível, registre como 'comprovante não disponível'.]"
+            )))
+            logger.warning(
+                "Sessão %d: %d binários omitidos (limite %d MB / %d arquivos)",
+                session_id, len(skipped_names),
+                MAX_BINARY_BYTES_PER_TURN // (1024*1024), MAX_BINARY_FILES_PER_TURN,
+            )
 
         # Monta mensagem do usuário com docs novos
         user_parts = doc_parts + [Part(text=message)]

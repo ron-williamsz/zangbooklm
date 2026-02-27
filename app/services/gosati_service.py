@@ -558,8 +558,14 @@ class GoSatiService:
         self,
         session_id: int,
         links: list[str],
+        despesas_info: list[dict] | None = None,
     ) -> list[Source]:
-        """Baixa comprovantes e salva cada imagem/PDF como Source."""
+        """Baixa comprovantes e salva cada imagem/PDF como Source.
+
+        Args:
+            despesas_info: lista de dicts com {numero_lancamento, historico, valor}
+                           na mesma ordem de 'links'. Se fornecido, enriquece o label.
+        """
         session = await self.db.get(Session, session_id)
         if not session:
             raise NotFoundError(404, f"Session {session_id} não encontrada")
@@ -574,6 +580,9 @@ class GoSatiService:
             documents = await self.baixar_comprovante(link)
             if not documents:
                 continue
+
+            # Info do lançamento associado (se disponível)
+            desp = (despesas_info[link_idx] if despesas_info and link_idx < len(despesas_info) else None)
 
             for page_idx, (doc_bytes, mime_type) in enumerate(documents):
                 ext = {
@@ -608,7 +617,15 @@ class GoSatiService:
                     except Exception as e:
                         logger.warning("Falha extração PDF %s: %s", filename, e)
 
-                label = f"Comprovante {link_idx + 1} (pág {page_idx + 1})"
+                # Label enriquecido com info do lançamento
+                if desp:
+                    hist = desp.get("historico", "")[:60]
+                    valor = desp.get("valor", "")
+                    lanc = desp.get("numero_lancamento", "")
+                    label = f"Comprovante Lanç.{lanc} — {hist} (R$ {valor}) pág {page_idx + 1}"
+                else:
+                    label = f"Comprovante {link_idx + 1} (pág {page_idx + 1})"
+
                 source = Source(
                     session_id=session_id,
                     filename=filename,

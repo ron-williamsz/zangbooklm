@@ -105,7 +105,11 @@ window.GoSati = {
 
             list.innerHTML = result.despesas.map(d => `
                 <label class="comprovante-item" style="display:flex; align-items:center; gap:8px; padding:4px 0; font-size:12px; color:var(--text-secondary); cursor:pointer;">
-                    <input type="checkbox" value="${d.link_docto}" class="comp-check" checked>
+                    <input type="checkbox" class="comp-check" checked
+                        data-link="${Utils.escapeHtml(d.link_docto)}"
+                        data-lancamento="${Utils.escapeHtml(d.numero_lancamento)}"
+                        data-historico="${Utils.escapeHtml(d.historico)}"
+                        data-valor="${Utils.escapeHtml(d.valor)}">
                     <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${d.historico}">
                         ${d.historico}
                     </span>
@@ -165,9 +169,15 @@ window.GoSati = {
         const sessionId = window.SESSION_ID;
         const btn = document.getElementById('btn-comprovantes');
         const checks = document.querySelectorAll('.comp-check:checked');
-        const links = Array.from(checks).map(c => c.value);
 
-        if (links.length === 0) {
+        const despesas = Array.from(checks).map(c => ({
+            link_docto: c.dataset.link,
+            numero_lancamento: c.dataset.lancamento || '',
+            historico: c.dataset.historico || '',
+            valor: c.dataset.valor || '',
+        }));
+
+        if (despesas.length === 0) {
             Utils.toast('Selecione ao menos um comprovante', 'warning');
             return;
         }
@@ -177,7 +187,7 @@ window.GoSati = {
         btn.classList.add('btn-loading');
 
         try {
-            const result = await API.downloadComprovantes(sessionId, links);
+            const result = await API.downloadComprovantes(sessionId, despesas);
             Utils.toast(`${result.downloaded} comprovante(s) baixado(s)`, 'success');
             await Sources.loadSources();
         } catch (e) {
