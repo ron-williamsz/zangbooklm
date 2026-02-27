@@ -8,6 +8,6 @@ class ChatMessage(BaseModel):
 
 class ChatSkillRequest(BaseModel):
     message: str = Field(
-        default="Execute a skill sobre os documentos carregados.",
+        default="Analise todos os documentos carregados seguindo rigorosamente as instruções e gere o relatório completo no formato especificado.",
         min_length=1,
     )

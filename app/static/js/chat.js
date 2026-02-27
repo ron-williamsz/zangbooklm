@@ -41,8 +41,7 @@ window.Chat = {
 
     async executeSkill(skillId) {
         if (this.isStreaming) return;
-        const skill = Skills.skills.find(s => s.id === skillId);
-        const message = `Execute a skill "${skill.name}" sobre os documentos carregados.`;
+        const message = 'Analise todos os documentos carregados seguindo rigorosamente as instruções e gere o relatório completo no formato especificado.';
         await this._stream(message, skillId);
     },
 
