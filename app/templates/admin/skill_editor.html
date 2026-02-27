@@ -6,7 +6,7 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="m15 18-6-6 6-6"/>
     </svg>
-    Voltar
+    <span class="btn-label-mobile-hide">Voltar</span>
 </a>
 {% endblock %}
 
@@ -24,7 +24,7 @@
         <!-- Info Básica -->
         <div class="skill-editor-section">
             <h3>Informações</h3>
-            <div style="display:flex; gap:12px; margin-bottom:12px;">
+            <div class="skill-editor-row" style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
                 <div class="form-group" style="width:60px">
                     <label>Ícone</label>
                     <input type="text" class="input" id="skill-icon" value="📋" maxlength="4" style="text-align:center; font-size:1.5rem; padding:6px;">
@@ -33,7 +33,7 @@
                     <label>Cor</label>
                     <input type="color" id="skill-color" value="#6366f1" style="width:100%; height:42px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--bg-input); cursor:pointer;">
                 </div>
-                <div class="form-group" style="flex:1">
+                <div class="form-group" style="flex:1; min-width:0;">
                     <label>Nome</label>
                     <input type="text" class="input" id="skill-name" placeholder="Ex: Análise de Prestação de Contas">
                 </div>
