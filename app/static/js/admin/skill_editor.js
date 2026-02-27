@@ -6,6 +6,7 @@ window.SkillEditor = {
     skill: null,
     steps: [],
     examples: [],
+    saving: false,
 
     async init() {
         this.skillId = window.SKILL_ID || 0;
@@ -26,7 +27,8 @@ window.SkillEditor = {
             document.getElementById('skill-color').value = this.skill.color;
             document.getElementById('skill-macro').value = this.skill.macro_instruction;
 
-            this.steps = this.skill.steps || [];
+            // Deep-copy para não compartilhar referência com this.skill.steps
+            this.steps = (this.skill.steps || []).map(s => ({ ...s }));
             this.examples = this.skill.examples || [];
             this.renderSteps();
             this.renderExamples();
@@ -47,9 +49,9 @@ window.SkillEditor = {
                 <div class="step-number">${i + 1}</div>
                 <div class="step-content">
                     <input type="text" class="input" value="${Utils.escapeHtml(step.title)}"
-                           placeholder="Título da etapa" onchange="SkillEditor.updateLocalStep(${i}, 'title', this.value)">
+                           placeholder="Título da etapa" oninput="SkillEditor.updateLocalStep(${i}, 'title', this.value)">
                     <textarea class="input" rows="2" placeholder="Instrução específica para esta etapa"
-                              onchange="SkillEditor.updateLocalStep(${i}, 'instruction', this.value)">${Utils.escapeHtml(step.instruction)}</textarea>
+                              oninput="SkillEditor.updateLocalStep(${i}, 'instruction', this.value)">${Utils.escapeHtml(step.instruction)}</textarea>
                 </div>
                 <div class="step-actions">
                     <button class="btn-icon btn-ghost btn-danger" onclick="SkillEditor.removeStep(${i})" title="Remover etapa">
@@ -135,6 +137,11 @@ window.SkillEditor = {
     },
 
     async save() {
+        if (this.saving) return;
+        this.saving = true;
+        const btn = document.getElementById('btn-save');
+        if (btn) btn.disabled = true;
+
         const data = {
             name: document.getElementById('skill-name').value.trim(),
             description: document.getElementById('skill-desc').value.trim(),
@@ -145,8 +152,13 @@ window.SkillEditor = {
 
         if (!data.name) {
             Utils.toast('Nome é obrigatório', 'warning');
+            this.saving = false;
+            if (btn) btn.disabled = false;
             return;
         }
+
+        // Coleta valores atuais dos steps direto do DOM (garante dados frescos)
+        this._collectStepsFromDOM();
 
         try {
             let skill;
@@ -168,17 +180,33 @@ window.SkillEditor = {
             await this.loadSkill();
         } catch (e) {
             Utils.toast('Erro ao salvar: ' + e.message, 'error');
+        } finally {
+            this.saving = false;
+            if (btn) btn.disabled = false;
         }
     },
 
+    _collectStepsFromDOM() {
+        const stepItems = document.querySelectorAll('.step-item');
+        stepItems.forEach((el, i) => {
+            if (i < this.steps.length) {
+                const titleInput = el.querySelector('input');
+                const instrTextarea = el.querySelector('textarea');
+                if (titleInput) this.steps[i].title = titleInput.value;
+                if (instrTextarea) this.steps[i].instruction = instrTextarea.value;
+            }
+        });
+    },
+
     async syncSteps(skillId) {
-        // Estratégia simples: deleta todos e recria
-        if (this.skill && this.skill.steps) {
-            for (const existing of this.skill.steps) {
+        // Usa this.skill.steps (snapshot do servidor) para saber quais IDs deletar
+        const serverSteps = (this.skill && this.skill.steps) ? this.skill.steps : [];
+        for (const existing of serverSteps) {
+            if (existing.id) {
                 try { await API.deleteStep(skillId, existing.id); } catch (e) { /* ok */ }
             }
         }
-        // Recria na ordem
+        // Recria na ordem a partir do estado local
         for (const step of this.steps) {
             if (step.title.trim()) {
                 await API.addStep(skillId, {

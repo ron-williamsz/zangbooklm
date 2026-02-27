@@ -16,7 +16,7 @@
         <h1 id="page-title">Nova Skill</h1>
         <div style="display:flex; gap:8px">
             <button class="btn btn-danger btn-sm hidden" id="btn-delete" onclick="SkillEditor.deleteSkill()">Excluir</button>
-            <button class="btn btn-primary btn-sm" onclick="SkillEditor.save()">Salvar Skill</button>
+            <button class="btn btn-primary btn-sm" id="btn-save" onclick="SkillEditor.save()">Salvar Skill</button>
         </div>
     </div>
 
@@ -96,5 +96,5 @@
 
 {% block extra_scripts %}
 <script>window.SKILL_ID = {{ skill_id }};</script>
-<script src="{{ url_for('static', path='js/admin/skill_editor.js') }}"></script>
+<script src="{{ url_for('static', path='js/admin/skill_editor.js') }}?v=4"></script>
 {% endblock %}
