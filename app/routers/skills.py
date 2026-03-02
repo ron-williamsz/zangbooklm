@@ -10,6 +10,7 @@ from app.schemas.skill import (
     SkillUpdate,
     StepCreate,
     StepResponse,
+    StepSyncRequest,
     StepUpdate,
 )
 from app.services.skill_service import SkillService
@@ -65,6 +66,12 @@ async def update_step(
 @router.delete("/{skill_id}/steps/{step_id}", status_code=204)
 async def delete_step(skill_id: int, step_id: int, svc: SkillService = Depends(_svc)):
     await svc.delete_step(skill_id, step_id)
+
+
+@router.put("/{skill_id}/steps", response_model=list[StepResponse])
+async def sync_steps(skill_id: int, data: StepSyncRequest, svc: SkillService = Depends(_svc)):
+    """Substitui todas as etapas atomicamente (delete + recreate em 1 transação)."""
+    return await svc.sync_steps(skill_id, data.steps)
 
 
 # --- Examples ---

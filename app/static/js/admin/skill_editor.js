@@ -199,23 +199,15 @@ window.SkillEditor = {
     },
 
     async syncSteps(skillId) {
-        // Usa this.skill.steps (snapshot do servidor) para saber quais IDs deletar
-        const serverSteps = (this.skill && this.skill.steps) ? this.skill.steps : [];
-        for (const existing of serverSteps) {
-            if (existing.id) {
-                try { await API.deleteStep(skillId, existing.id); } catch (e) { /* ok */ }
-            }
-        }
-        // Recria na ordem a partir do estado local
-        for (const step of this.steps) {
-            if (step.title.trim()) {
-                await API.addStep(skillId, {
-                    title: step.title,
-                    instruction: step.instruction,
-                    expected_output: step.expected_output || null,
-                });
-            }
-        }
+        // Envia todas as etapas de uma vez — backend faz delete + recreate numa única transação
+        const steps = this.steps
+            .filter(s => s.title.trim())
+            .map(s => ({
+                title: s.title,
+                instruction: s.instruction,
+                expected_output: s.expected_output || null,
+            }));
+        await API.syncSteps(skillId, steps);
     },
 
     async deleteSkill() {

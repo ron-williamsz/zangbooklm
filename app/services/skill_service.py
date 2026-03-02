@@ -96,6 +96,41 @@ class SkillService:
         await self.db.delete(step)
         await self.db.commit()
 
+    async def sync_steps(self, skill_id: int, items: list[StepSyncItem]) -> list[SkillStep]:
+        """Substitui todas as etapas de uma skill atomicamente numa única transação."""
+        skill = await self.get_by_id(skill_id)
+
+        # Remove etapas existentes
+        existing = await self.db.execute(
+            select(SkillStep).where(SkillStep.skill_id == skill_id)
+        )
+        for step in existing.scalars().all():
+            await self.db.delete(step)
+
+        # Cria novas etapas
+        new_steps = []
+        for order, item in enumerate(items, start=1):
+            if not item.title.strip():
+                continue
+            step = SkillStep(
+                skill_id=skill_id,
+                order=order,
+                title=item.title,
+                instruction=item.instruction,
+                expected_output=item.expected_output,
+            )
+            self.db.add(step)
+            new_steps.append(step)
+
+        skill.updated_at = datetime.now(timezone.utc)
+
+        # Commit único — se falhar, nada é alterado
+        await self.db.commit()
+
+        for step in new_steps:
+            await self.db.refresh(step)
+        return new_steps
+
     # --- Examples ---
 
     async def add_example(

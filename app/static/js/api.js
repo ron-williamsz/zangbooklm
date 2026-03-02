@@ -128,6 +128,7 @@ window.API = {
     deleteStep(skillId, stepId) {
         return this.request('DELETE', `/skills/${skillId}/steps/${stepId}`);
     },
+    syncSteps(skillId, steps)   { return this.request('PUT', `/skills/${skillId}/steps`, { body: { steps } }); },
 
     // Examples
     uploadExample(skillId, file, description) {
