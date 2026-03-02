@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=4">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v=5">
     {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -31,6 +31,18 @@
                 <span class="btn-label-mobile-hide">Configurar Skills</span>
             </a>
             {% endblock %}
+
+            {% if user_name %}
+            <span class="navbar-user" title="{{ user_name }}">{{ user_name.split(' ')[0] }}</span>
+            <button class="btn btn-ghost btn-sm" onclick="Auth.logout()" title="Sair">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span class="btn-label-mobile-hide">Sair</span>
+            </button>
+            {% endif %}
         </div>
     </nav>
 
@@ -42,7 +54,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="{{ url_for('static', path='js/utils.js') }}?v=3"></script>
-    <script src="{{ url_for('static', path='js/api.js') }}?v=5"></script>
+    <script src="{{ url_for('static', path='js/api.js') }}?v=7"></script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

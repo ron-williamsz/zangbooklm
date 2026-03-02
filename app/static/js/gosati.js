@@ -6,6 +6,52 @@ window.GoSati = {
     _searchTimer: null,
     _selectedCond: null,
 
+    // --- Restore saved selection on page load ---
+
+    restoreSelection(session) {
+        if (!session.gosati_condominio_codigo) return;
+
+        // Restore form fields
+        document.getElementById('gosati-tipo').value = session.gosati_query_type || 'prestacao_contas';
+        document.getElementById('gosati-cond').value = session.gosati_condominio_codigo;
+        document.getElementById('gosati-cond-search').value =
+            `${session.gosati_condominio_codigo} — ${session.gosati_condominio_nome || ''}`;
+        if (session.gosati_mes) document.getElementById('gosati-mes').value = session.gosati_mes;
+        if (session.gosati_ano) document.getElementById('gosati-ano').value = session.gosati_ano;
+
+        this._selectedCond = {
+            codigo: session.gosati_condominio_codigo,
+            nome: session.gosati_condominio_nome || '',
+        };
+        this._lastQuery = {
+            query_type: session.gosati_query_type,
+            condominio: session.gosati_condominio_codigo,
+            mes: session.gosati_mes,
+            ano: session.gosati_ano,
+        };
+    },
+
+    async _saveSelection(sessionId) {
+        const nome = this._selectedCond ? this._selectedCond.nome : '';
+        await API.saveGoSatiSelection(sessionId, {
+            gosati_query_type: document.getElementById('gosati-tipo').value,
+            gosati_condominio_codigo: parseInt(document.getElementById('gosati-cond').value) || null,
+            gosati_condominio_nome: nome || null,
+            gosati_mes: parseInt(document.getElementById('gosati-mes').value) || null,
+            gosati_ano: parseInt(document.getElementById('gosati-ano').value) || null,
+        });
+    },
+
+    async _clearSelection(sessionId) {
+        await API.saveGoSatiSelection(sessionId, {
+            gosati_query_type: null,
+            gosati_condominio_codigo: null,
+            gosati_condominio_nome: null,
+            gosati_mes: null,
+            gosati_ano: null,
+        });
+    },
+
     // --- Autocomplete de condomínios ---
 
     searchCond(value) {
@@ -70,6 +116,7 @@ window.GoSati = {
             const result = await API.queryGoSati(sessionId, data);
             Utils.toast(`Dados carregados: ${result.label}`, 'success');
             this._lastQuery = data;
+            await this._saveSelection(sessionId);
             await Sources.loadSources();
 
             // Se prestação de contas, oferece listar comprovantes
@@ -142,6 +189,7 @@ window.GoSati = {
         btn.disabled = true;
         try {
             await API.resetGoSati(sessionId);
+            await this._clearSelection(sessionId);
 
             // Limpa form
             document.getElementById('gosati-cond').value = '';

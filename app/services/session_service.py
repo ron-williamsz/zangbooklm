@@ -7,7 +7,7 @@ from sqlmodel import select
 from app.core.exceptions import NotFoundError
 from app.models.session import Session
 from app.models.chat_message import ChatMessage as ChatMessageRecord
-from app.schemas.session import SessionCreate
+from app.schemas.session import GoSatiSelection, SessionCreate
 from app.services.chat_service import clear_session_cache
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,15 @@ class SessionService:
 
     async def create(self, data: SessionCreate) -> Session:
         session = Session(**data.model_dump())
+        self.db.add(session)
+        await self.db.commit()
+        await self.db.refresh(session)
+        return session
+
+    async def update_gosati_selection(self, session_id: int, data: GoSatiSelection) -> Session:
+        session = await self.get_by_id(session_id)
+        for key, value in data.model_dump().items():
+            setattr(session, key, value)
         self.db.add(session)
         await self.db.commit()
         await self.db.refresh(session)

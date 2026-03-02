@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import get_db
-from app.schemas.session import SessionCreate, SessionResponse
+from app.schemas.session import GoSatiSelection, SessionCreate, SessionResponse
 from app.services.session_service import SessionService
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
@@ -26,6 +26,13 @@ async def create_session(data: SessionCreate, svc: SessionService = Depends(_svc
 @router.get("/{session_id}", response_model=SessionResponse)
 async def get_session(session_id: int, svc: SessionService = Depends(_svc)):
     return await svc.get_by_id(session_id)
+
+
+@router.patch("/{session_id}/gosati-selection", response_model=SessionResponse)
+async def update_gosati_selection(
+    session_id: int, data: GoSatiSelection, svc: SessionService = Depends(_svc)
+):
+    return await svc.update_gosati_selection(session_id, data)
 
 
 @router.delete("/{session_id}", status_code=204)

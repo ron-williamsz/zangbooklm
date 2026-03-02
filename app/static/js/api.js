@@ -20,6 +20,11 @@ window.API = {
 
         const resp = await fetch(url, config);
 
+        if (resp.status === 401 && !path.startsWith('/auth/')) {
+            window.location.href = '/login';
+            throw new Error('Sessão expirada');
+        }
+
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
             throw new Error(err.detail || err.error || `Erro ${resp.status}`);
@@ -70,6 +75,10 @@ window.API = {
     },
 
     async _readStream(resp, onChunk, onDone) {
+        if (resp.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -149,5 +158,22 @@ window.API = {
     },
     resetChatCache(sessionId) {
         return this.request('DELETE', `/sessions/${sessionId}/chat/cache`);
+    },
+
+    // === GoSATI Selection Persistence ===
+    saveGoSatiSelection(sessionId, data) {
+        return this.request('PATCH', `/sessions/${sessionId}/gosati-selection`, { body: data });
+    },
+};
+
+/**
+ * Auth — autenticação (logout global)
+ */
+window.Auth = {
+    async logout() {
+        try {
+            await API.request('POST', '/auth/logout');
+        } catch (e) { /* ignore */ }
+        window.location.href = '/login';
     },
 };

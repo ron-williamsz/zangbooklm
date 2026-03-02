@@ -38,6 +38,16 @@ class ExampleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class StepSyncItem(BaseModel):
+    title: str = Field(max_length=200)
+    instruction: str = ""
+    expected_output: str | None = None
+
+
+class StepSyncRequest(BaseModel):
+    steps: list[StepSyncItem] = []
+
+
 # === Skill ===
 class SkillCreate(BaseModel):
     name: str = Field(max_length=100)

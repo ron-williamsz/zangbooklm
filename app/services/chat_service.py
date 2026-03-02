@@ -13,6 +13,7 @@ from sqlmodel import select
 
 from app.core.config import Settings
 from app.models.chat_message import ChatMessage as ChatMessageRecord
+from app.models.session import Session
 from app.services.skill_service import SkillService
 from app.services.source_service import SourceService
 
@@ -91,6 +92,16 @@ class ChatService:
         if skill_id:
             skill_prompt = await self.skill_svc.build_prompt(skill_id)
             system_instruction = skill_prompt
+
+        # Injeta contexto do condomínio se houver seleção GoSATI
+        session = await self.db.get(Session, session_id)
+        if session and session.gosati_condominio_codigo:
+            cond_context = (
+                f"\nO condomínio em análise é: {session.gosati_condominio_codigo}"
+                f" — {session.gosati_condominio_nome or 'N/A'}"
+                f" (período {session.gosati_mes or '?'}/{session.gosati_ano or '?'})."
+            )
+            system_instruction += cond_context
 
         # Carrega documentos da sessão (usa get_content_for_llm para conversão)
         sources = await self.source_svc.list_by_session(session_id)

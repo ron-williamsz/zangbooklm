@@ -14,6 +14,9 @@ window.Notebook = {
             document.getElementById('notebook-title').textContent = this.session.title;
             document.getElementById('chat-welcome-title').textContent = this.session.title;
 
+            // Restaura seleção GoSATI salva
+            GoSati.restoreSelection(this.session);
+
             // Carrega componentes em paralelo
             await Promise.all([
                 Sources.init(this.sessionId),

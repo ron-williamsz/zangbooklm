@@ -11,7 +11,7 @@ from sqlmodel import select
 from app.core.config import BASE_DIR
 from app.core.exceptions import NotFoundError
 from app.models.skill import Skill, SkillExample, SkillStep
-from app.schemas.skill import SkillCreate, SkillUpdate, StepCreate, StepUpdate
+from app.schemas.skill import SkillCreate, SkillUpdate, StepCreate, StepSyncItem, StepUpdate
 
 logger = logging.getLogger(__name__)
 
