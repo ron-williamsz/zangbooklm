@@ -54,7 +54,12 @@ class ChatService:
     async def chat_with_skill(
         self, session_id: int, skill_id: int, message: str
     ) -> AsyncGenerator[str, None]:
-        """Chat com skill ativa — injeta prompt da skill."""
+        """Chat com skill ativa — injeta prompt da skill.
+
+        Limpa _sent_docs para que todos os documentos sejam re-enviados,
+        garantindo que a análise da skill sempre tenha acesso completo aos dados.
+        """
+        _sent_docs.pop(session_id, None)
         async for chunk in self._generate(session_id, message, skill_id=skill_id):
             yield chunk
 
@@ -123,6 +128,7 @@ class ChatService:
         doc_parts = []
         text_docs = []
         binary_docs = []
+        docs_in_this_turn: set[int] = set()  # para rollback em caso de erro
         for src_id, doc in _document_cache.get(session_id, {}).items():
             if src_id not in _sent_docs.get(session_id, set()):
                 if isinstance(doc["content"], bytes):
@@ -135,6 +141,7 @@ class ChatService:
             doc_label = doc.get("label") or doc["filename"]
             doc_parts.append(Part(text=f"[Documento: {doc_label}]\n{doc['content']}"))
             _sent_docs[session_id].add(src_id)
+            docs_in_this_turn.add(src_id)
 
         # Binários com limite de tamanho e quantidade
         binary_total = 0
@@ -146,6 +153,7 @@ class ChatService:
                     or binary_count >= MAX_BINARY_FILES_PER_TURN):
                 skipped_names.append(doc.get("label") or doc["filename"])
                 _sent_docs[session_id].add(src_id)  # marca como "enviado" para não ficar preso
+                docs_in_this_turn.add(src_id)
                 continue
             # Inclui label como contexto antes da imagem/PDF binário
             doc_label = doc.get("label") or doc["filename"]
@@ -154,6 +162,7 @@ class ChatService:
             binary_total += size
             binary_count += 1
             _sent_docs[session_id].add(src_id)
+            docs_in_this_turn.add(src_id)
 
         if skipped_names:
             doc_parts.append(Part(text=(
@@ -222,6 +231,8 @@ class ChatService:
             # Remove a mensagem do usuário do contexto Gemini se falhou
             if _gemini_contents[session_id]:
                 _gemini_contents[session_id].pop()
+            # Reverte _sent_docs para que os docs sejam re-enviados no retry
+            _sent_docs.get(session_id, set()).difference_update(docs_in_this_turn)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     async def get_history(self, session_id: int) -> list[dict]:
