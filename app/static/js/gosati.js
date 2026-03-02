@@ -113,11 +113,22 @@ window.GoSati = {
         btn.classList.add('btn-loading');
 
         try {
+            // Detecta troca de condomínio — backend limpa sources+chat automaticamente
+            const condChanged = this._lastQuery && this._lastQuery.condominio !== data.condominio;
+
             const result = await API.queryGoSati(sessionId, data);
             Utils.toast(`Dados carregados: ${result.label}`, 'success');
             this._lastQuery = data;
             await this._saveSelection(sessionId);
             await Sources.loadSources();
+
+            // Se condomínio mudou, limpa chat visual (backend já limpou o histórico)
+            if (condChanged) {
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages) chatMessages.innerHTML = '';
+                const chatWelcome = document.getElementById('chat-welcome');
+                if (chatWelcome) chatWelcome.classList.remove('hidden');
+            }
 
             // Se prestação de contas, oferece listar comprovantes
             if (data.query_type === 'prestacao_contas') {

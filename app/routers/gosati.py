@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.models.base import get_db
+from app.models.session import Session
 from app.schemas.gosati import (
     ComprovantesDownloadRequest,
     ComprovantesDownloadResponse,
@@ -16,7 +17,7 @@ from app.schemas.gosati import (
     GoSatiQuery,
     GoSatiSourceResponse,
 )
-from app.services.chat_service import clear_session_cache
+from app.services.chat_service import ChatService
 from app.services.gosati_service import GoSatiError, GoSatiService
 from app.services.source_service import SourceService
 
@@ -36,6 +37,19 @@ async def add_gosati_source(
     settings: Settings = Depends(get_settings),
 ):
     """Consulta SOAP no GoSATI e salva resultado como Source do notebook."""
+    # Detecta troca de condomínio — limpa sources GoSATI + chat antigos
+    session = await db.get(Session, session_id)
+    old_cond = session.gosati_condominio_codigo if session else None
+    if old_cond and old_cond != data.condominio:
+        logger.info(
+            "Sessão %d: condomínio mudou de %s → %s, limpando dados antigos",
+            session_id, old_cond, data.condominio,
+        )
+        source_svc = SourceService(db)
+        await source_svc.delete_by_origin(session_id, "gosati")
+        chat_svc = ChatService(db, settings)
+        await chat_svc.clear_history(session_id)
+
     svc = GoSatiService(db, settings)
     try:
         source = await svc.query_as_source(
@@ -133,11 +147,14 @@ async def download_comprovantes(
 async def reset_gosati(
     session_id: int,
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ):
-    """Remove todas as sources GoSATI da sessão e limpa caches."""
+    """Remove todas as sources GoSATI da sessão, limpa chat e caches."""
     source_svc = SourceService(db)
     await source_svc.delete_by_origin(session_id, "gosati")
-    clear_session_cache(session_id)
+    # Limpa chat history do banco + caches em memória
+    chat_svc = ChatService(db, settings)
+    await chat_svc.clear_history(session_id)
     # Limpa cache de prestação
     keys_to_remove = [k for k in _prestacao_cache if True]  # limpa tudo por segurança
     for k in keys_to_remove:
