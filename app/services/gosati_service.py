@@ -467,11 +467,20 @@ class GoSatiService:
                     return documents
 
                 html = resp.text
-                session_match = re.search(r"Session=(\d+)", html)
+                # Tenta múltiplos padrões (GoSATI pode mudar o formato do redirect)
+                session_match = (
+                    re.search(r"Session=(\d+)", html)
+                    or re.search(r"Session=([A-Za-z0-9]+)", html)
+                    or re.search(r"session=([A-Za-z0-9]+)", html, re.IGNORECASE)
+                    or re.search(r"SessionID?=([A-Za-z0-9]+)", html, re.IGNORECASE)
+                )
                 if not session_match:
                     logger.warning(
                         "Session ID não encontrado no HTML do GoSATI — "
-                        "o formato do redirect pode ter mudado. URL: %s", link_docto,
+                        "o formato do redirect pode ter mudado. URL: %s | "
+                        "Início do HTML: %s",
+                        link_docto,
+                        html[:600].replace("\n", " ").replace("\r", ""),
                     )
                     return documents
 

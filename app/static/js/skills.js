@@ -52,7 +52,12 @@ window.Skills = {
         } else {
             this.activeSkillId = skillId;
             this.render();
-            Chat.executeSkill(skillId);
+            // Após a execução da skill, limpa activeSkillId para que perguntas
+            // de follow-up usem chat livre (sem re-gerar o relatório inteiro)
+            Chat.executeSkill(skillId).then(() => {
+                this.activeSkillId = null;
+                this.render();
+            });
         }
     }
 };
