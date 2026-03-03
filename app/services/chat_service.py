@@ -160,12 +160,16 @@ class ChatService:
                         combined = "\n\n".join(intermediate_analyses)
                         _gemini_contents[session_id].append(
                             Content(role="user", parts=[Part(text=(
-                                f"[Dados dos comprovantes processados nos lotes anteriores:]\n{combined}"
+                                "[Tabela de comprovantes extraídos nos lotes anteriores — "
+                                "use estes dados para cruzar com a relação de lançamentos "
+                                "e gerar o relatório final:]\n\n"
+                                f"{combined}"
                             ))])
                         )
                         _gemini_contents[session_id].append(
                             Content(role="model", parts=[Part(text=(
-                                "Dados dos lotes anteriores registrados. Prosseguindo com o relatório final."
+                                "Tabela dos lotes anteriores registrada. "
+                                "Prosseguindo com o relatório final."
                             ))])
                         )
 
@@ -179,11 +183,24 @@ class ChatService:
 
                     yield f"data: {json.dumps({'progress': f'Analisando documentos — lote {batch_idx + 1} de {len(batches)}...'})}\n\n"
 
+                    # Injeta metadados dos lançamentos deste lote para que o Gemini
+                    # possa correlacionar sem depender dos text docs completos
+                    meta_lines = []
+                    for src_id in batch_ids:
+                        doc = _document_cache.get(session_id, {}).get(src_id)
+                        if doc:
+                            meta_lines.append(f"  - {doc.get('label') or doc['filename']}")
+                    meta_header = (
+                        "Metadados dos comprovantes neste lote:\n" + "\n".join(meta_lines) + "\n\n"
+                        if meta_lines else ""
+                    )
+
                     batch_msg = (
-                        "Para cada comprovante (imagem ou PDF) visível nesta mensagem, "
-                        "registre: número do lançamento (se visível no documento), "
-                        "beneficiário/favorecido, valor e data. "
-                        "Não mencione lançamentos sem comprovante visível aqui."
+                        f"{meta_header}"
+                        "Para cada comprovante (imagem ou PDF) visível acima, extraia os dados "
+                        "em formato de tabela com as colunas:\n"
+                        "| Nº Lançamento | Beneficiário/Favorecido | Valor | Data | Tipo (NF/DARF/Boleto/GPS/Outro) |\n"
+                        "Inclua apenas comprovantes visíveis. Sem narrativa, apenas a tabela."
                     )
 
                     async for chunk in self._generate(session_id, batch_msg, skill_id=None):
@@ -192,13 +209,13 @@ class ChatService:
                             return
                         # descarta texto ao cliente — contexto salvo internamente
 
-                    # Coleta resposta do modelo para o resumo final
+                    # Coleta resposta do modelo (tabela estruturada) para o resumo final
                     ctx = _gemini_contents.get(session_id, [])
                     if ctx and ctx[-1].role == "model":
                         parts = ctx[-1].parts
                         if parts and hasattr(parts[0], "text") and parts[0].text:
                             intermediate_analyses.append(
-                                f"Lote {batch_idx + 1}/{len(batches)}:\n{parts[0].text}"
+                                f"=== Lote {batch_idx + 1}/{len(batches)} ===\n{parts[0].text}"
                             )
 
             finally:
