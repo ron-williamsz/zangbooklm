@@ -219,6 +219,13 @@ class ChatService:
                     full_response += chunk.text
                     yield f"data: {json.dumps({'text': chunk.text})}\n\n"
 
+            # Substitui a mensagem do usuário no histórico por versão texto-only:
+            # remove os binários/docs para evitar acúmulo de tokens no contexto
+            if doc_parts:
+                _gemini_contents[session_id][-1] = Content(
+                    role="user", parts=[Part(text=message)]
+                )
+
             # Salva resposta no contexto Gemini e no banco
             _gemini_contents[session_id].append(
                 Content(role="model", parts=[Part(text=full_response)])
