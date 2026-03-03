@@ -460,11 +460,19 @@ class GoSatiService:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
                 resp = await client.get(link_docto)
                 if resp.status_code != 200:
+                    logger.warning(
+                        "GoSATI retornou HTTP %d ao acessar link_docto: %s",
+                        resp.status_code, link_docto,
+                    )
                     return documents
 
                 html = resp.text
                 session_match = re.search(r"Session=(\d+)", html)
                 if not session_match:
+                    logger.warning(
+                        "Session ID não encontrado no HTML do GoSATI — "
+                        "o formato do redirect pode ter mudado. URL: %s", link_docto,
+                    )
                     return documents
 
                 session_id = session_match.group(1)
@@ -474,6 +482,13 @@ class GoSatiService:
                 for ca in range(20):
                     img_url = f"{base_url}?ca={ca}&or=2&Session={session_id}"
                     img_resp = await client.get(img_url, cookies=cookies)
+
+                    if img_resp.status_code != 200:
+                        logger.debug("Show.aspx ca=%d retornou HTTP %d", ca, img_resp.status_code)
+                        empty_count += 1
+                        if empty_count >= 2:
+                            break
+                        continue
 
                     mime = _detect_mime_type(img_resp.content)
                     if mime:
@@ -486,7 +501,7 @@ class GoSatiService:
                     if empty_count >= 2:
                         break
         except Exception as e:
-            logger.warning("Erro ao baixar comprovante: %s", e)
+            logger.warning("Erro ao baixar comprovante '%s': %s", link_docto, e)
         return documents
 
     # ------------------------------------------------------------------
@@ -574,11 +589,15 @@ class GoSatiService:
         save_dir.mkdir(parents=True, exist_ok=True)
 
         sources: list[Source] = []
-        doc_counter = 0
 
         for link_idx, link in enumerate(links):
             documents = await self.baixar_comprovante(link)
             if not documents:
+                logger.warning(
+                    "Sessão %d: nenhum documento baixado para link %d/%d — "
+                    "o comprovante pode não existir no GoSATI ou houve falha no download.",
+                    session_id, link_idx + 1, len(links),
+                )
                 continue
 
             # Info do lançamento associado (se disponível)
@@ -639,9 +658,7 @@ class GoSatiService:
                 )
                 self.db.add(source)
                 sources.append(source)
-                doc_counter += 1
-
-            session.source_count += 1
+                session.source_count += 1
 
         if sources:
             await self.db.commit()
