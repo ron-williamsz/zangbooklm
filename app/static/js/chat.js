@@ -75,6 +75,12 @@ window.Chat = {
             this.scrollToBottom();
         };
 
+        const onProgress = (msg) => {
+            if (firstChunk) {
+                contentEl.innerHTML = `<div class="loading-indicator"><span class="spinner"></span>${msg}</div>`;
+            }
+        };
+
         const onDone = () => {
             this.isStreaming = false;
             this.toggleSendBtn(true);
@@ -84,7 +90,7 @@ window.Chat = {
 
         try {
             if (skillId) {
-                await API.executeSkillStream(this.sessionId, skillId, message, onChunk, onDone);
+                await API.executeSkillStream(this.sessionId, skillId, message, onChunk, onDone, onProgress);
             } else {
                 await API.sendMessageStream(this.sessionId, message, onChunk, onDone);
             }

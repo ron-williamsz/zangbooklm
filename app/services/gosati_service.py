@@ -121,6 +121,32 @@ def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
     return data, mime_type
 
 
+def _is_binary_garbage(text: str, max_non_print_ratio: float = 0.15) -> bool:
+    """Retorna True se o texto extraído contém lixo binário/nulo.
+
+    Filtra PDFs escaneados onde pdfplumber extrai bytes nulos ou caracteres
+    não-imprimíveis em vez de texto legível.
+    """
+    if not text:
+        return True
+    stripped = text.strip()
+    if not stripped:
+        return True
+    total = len(stripped)
+    # Nulos explícitos (bytes \x00)
+    if stripped.count("\x00") > total * 0.05:
+        return True
+    # Excesso de não-imprimíveis (exceto espaço/tab/newline)
+    non_print = sum(1 for c in stripped if ord(c) < 32 and c not in "\n\r\t ")
+    if non_print / total > max_non_print_ratio:
+        return True
+    # Texto com conteúdo mínimo legível (pelo menos 10 caracteres não-espaço)
+    meaningful = sum(1 for c in stripped if c not in " \n\r\t")
+    if meaningful < 10:
+        return True
+    return False
+
+
 def _detect_mime_type(data: bytes) -> str | None:
     """Detecta mime type a partir dos magic bytes."""
     if len(data) < 10:
@@ -707,13 +733,18 @@ class GoSatiService:
                 if mime_type == "application/pdf":
                     try:
                         extracted = extract_text_from_pdf(doc_bytes)
-                        if extracted.strip():
+                        if extracted.strip() and not _is_binary_garbage(extracted):
                             txt_file = file_path.with_suffix(".extracted.txt")
                             txt_file.write_text(extracted, encoding="utf-8")
                             text_path = str(txt_file)
                             is_native = False
                             logger.info(
                                 "PDF comprovante %s → %d chars texto",
+                                filename, len(extracted),
+                            )
+                        elif extracted.strip():
+                            logger.warning(
+                                "PDF comprovante %s: texto descartado (lixo binário, %d chars)",
                                 filename, len(extracted),
                             )
                     except Exception as e:

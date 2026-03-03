@@ -61,20 +61,20 @@ window.API = {
         await this._readStream(resp, onChunk, onDone);
     },
 
-    async executeSkillStream(sessionId, skillId, message, onChunk, onDone) {
+    async executeSkillStream(sessionId, skillId, message, onChunk, onDone, onProgress) {
         const resp = await fetch(`${this.baseUrl}/sessions/${sessionId}/chat/skill/${skillId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message }),
         });
-        await this._readStream(resp, onChunk, onDone);
+        await this._readStream(resp, onChunk, onDone, onProgress);
     },
 
     getChatHistory(sessionId) {
         return this.request('GET', `/sessions/${sessionId}/chat/history`);
     },
 
-    async _readStream(resp, onChunk, onDone) {
+    async _readStream(resp, onChunk, onDone, onProgress) {
         if (resp.status === 401) {
             window.location.href = '/login';
             return;
@@ -101,6 +101,7 @@ window.API = {
                     try {
                         const parsed = JSON.parse(data);
                         if (parsed.text && onChunk) onChunk(parsed.text);
+                        if (parsed.progress && onProgress) onProgress(parsed.progress);
                         if (parsed.error) {
                             Utils.toast(parsed.error, 'error');
                             if (onDone) onDone();

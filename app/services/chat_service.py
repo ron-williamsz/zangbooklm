@@ -142,30 +142,34 @@ class ChatService:
                 batch_skill = skill_id
             elif batch_idx == 0:
                 batch_msg = (
-                    f"[Lote 1/{len(batches)}] Analise cada comprovante acima e registre: "
-                    f"número do lançamento, fornecedor, valor, data e conformidade. "
-                    f"Seja objetivo. O relatório final será gerado após todos os lotes."
+                    "Analise os comprovantes acima. Para cada um registre: "
+                    "número do lançamento, beneficiário/fornecedor, valor e data. "
+                    "Não reproduza códigos de barras nem sequências numéricas longas. "
+                    "Seja objetivo — o relatório final será gerado após todos os lotes."
                 )
                 batch_skill = None
             else:
                 batch_msg = (
-                    f"[Lote {batch_idx + 1}/{len(batches)}] Continue a análise dos "
-                    f"próximos comprovantes com o mesmo critério."
+                    "Continue registrando os dados dos próximos comprovantes: "
+                    "lançamento, beneficiário, valor e data. "
+                    "Não reproduza códigos de barras nem linhas digitáveis."
                 )
                 batch_skill = None
 
             try:
-                async for chunk in self._generate(
-                    session_id, batch_msg, skill_id=batch_skill
-                ):
-                    # Suprime DONE dos lotes intermediários (stream permanece aberto)
-                    if not is_last and chunk == "data: [DONE]\n\n":
-                        continue
-                    # Interrompe se houve erro no Gemini
-                    if not is_last and '"error"' in chunk:
+                if is_last:
+                    async for chunk in self._generate(session_id, batch_msg, skill_id=batch_skill):
                         yield chunk
-                        return
-                    yield chunk
+                else:
+                    # Suprime texto ao cliente nos lotes intermediários:
+                    # o contexto Gemini é construído internamente, mas o usuário
+                    # vê apenas um keepalive de progresso.
+                    yield f"data: {json.dumps({'progress': f'Analisando documentos — lote {batch_idx + 1} de {len(batches)}...'})}\n\n"
+                    async for chunk in self._generate(session_id, batch_msg, skill_id=batch_skill):
+                        if '"error"' in chunk:
+                            yield chunk
+                            return
+                        # descarta texto — contexto já salvo em _gemini_contents
             finally:
                 # Restaura: remove IDs futuros marcados temporariamente
                 _sent_docs[session_id].difference_update(future_ids)
@@ -204,6 +208,15 @@ class ChatService:
         if skill_id:
             skill_prompt = await self.skill_svc.build_prompt(skill_id)
             system_instruction = skill_prompt
+
+        # Instrução anti-repetição: evita loops ao transcrever códigos de barras/boletos
+        system_instruction += (
+            "\n\nREGRA OBRIGATÓRIA: Nunca reproduza códigos de barras, linhas digitáveis, "
+            "chaves PIX longas, sequências numéricas extensas ou qualquer outro dado "
+            "que seja apenas uma longa sequência de dígitos. "
+            "Para comprovantes bancários, registre apenas: tipo do comprovante, "
+            "beneficiário/favorecido, valor e data. Jamais transcreva a linha digitável completa."
+        )
 
         # Injeta contexto do condomínio se houver seleção GoSATI
         session = await self.db.get(Session, session_id)
@@ -317,6 +330,8 @@ class ChatService:
                     "system_instruction": system_instruction,
                     "temperature": self.settings.gemini_temperature,
                     "max_output_tokens": self.settings.gemini_max_output_tokens,
+                    "frequency_penalty": 0.5,  # penaliza repetição de tokens
+                    "presence_penalty": 0.3,   # penaliza tokens já usados
                 },
             )
 
