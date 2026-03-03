@@ -24,10 +24,36 @@ _document_cache: dict[int, dict[int, dict]] = defaultdict(dict)
 _sent_docs: dict[int, set[int]] = defaultdict(set)  # docs já enviados ao Gemini
 _gemini_contents: dict[int, list[Content]] = defaultdict(list)  # contexto Gemini em memória
 
-# Limite de binários (imagens/PDFs) enviados por turno ao Gemini.
-# PDFs com texto extraído são enviados como texto e não contam nesses limites.
-MAX_BINARY_BYTES_PER_TURN = 50 * 1024 * 1024  # 50 MB
-MAX_BINARY_FILES_PER_TURN = 200
+# Limite por lote de binários (imagens/PDFs). PDFs com texto extraído
+# são enviados como texto e não contam nesses limites.
+MAX_BINARY_BYTES_PER_TURN = 15 * 1024 * 1024  # 15 MB por lote
+MAX_BINARY_FILES_PER_TURN = 40               # máx arquivos por lote
+
+
+def _build_batches(
+    binary_ids: list[int], doc_cache: dict[int, dict]
+) -> list[list[int]]:
+    """Divide IDs de docs binários em lotes por tamanho e quantidade."""
+    batches: list[list[int]] = []
+    current: list[int] = []
+    current_size = 0
+    for src_id in binary_ids:
+        doc = doc_cache.get(src_id)
+        if not doc:
+            continue
+        size = len(doc["content"])
+        if current and (
+            current_size + size > MAX_BINARY_BYTES_PER_TURN
+            or len(current) >= MAX_BINARY_FILES_PER_TURN
+        ):
+            batches.append(current)
+            current = []
+            current_size = 0
+        current.append(src_id)
+        current_size += size
+    if current:
+        batches.append(current)
+    return batches
 
 
 def clear_session_cache(session_id: int) -> None:
@@ -55,14 +81,94 @@ class ChatService:
     async def chat_with_skill(
         self, session_id: int, skill_id: int, message: str
     ) -> AsyncGenerator[str, None]:
-        """Chat com skill ativa — injeta prompt da skill.
-
-        Limpa _sent_docs para que todos os documentos sejam re-enviados,
-        garantindo que a análise da skill sempre tenha acesso completo aos dados.
-        """
+        """Chat com skill ativa — processa em lotes se houver muitos binários."""
         _sent_docs.pop(session_id, None)
-        async for chunk in self._generate(session_id, message, skill_id=skill_id):
-            yield chunk
+
+        # Pré-carrega cache para avaliar volume antes de iniciar
+        await self._ensure_gemini_context(session_id)
+        sources = await self.source_svc.list_by_session(session_id)
+        for src in sources:
+            if src.id not in _document_cache.get(session_id, {}):
+                try:
+                    content, mime_type = self.source_svc.get_content_for_llm(src)
+                    _document_cache[session_id][src.id] = {
+                        "content": content,
+                        "mime_type": mime_type,
+                        "filename": src.filename,
+                        "label": src.label or src.filename,
+                    }
+                except Exception as e:
+                    logger.warning(f"Erro ao ler source {src.id}: {e}")
+
+        # Identifica binários e divide em lotes
+        binary_ids = [
+            src_id
+            for src_id, doc in _document_cache.get(session_id, {}).items()
+            if isinstance(doc["content"], bytes)
+        ]
+        batches = _build_batches(binary_ids, _document_cache.get(session_id, {}))
+
+        if len(batches) <= 1:
+            # Volume normal — fluxo único
+            async for chunk in self._generate(session_id, message, skill_id=skill_id):
+                yield chunk
+            return
+
+        # --- Processamento em múltiplos lotes ---
+        total_mb = sum(
+            len(_document_cache[session_id][sid]["content"])
+            for sid in binary_ids
+            if sid in _document_cache.get(session_id, {})
+        ) / 1024 / 1024
+        logger.info(
+            "Sessão %d: %d binários (%.1f MB) em %d lotes",
+            session_id, len(binary_ids), total_mb, len(batches),
+        )
+
+        all_binary_ids = set(binary_ids)
+
+        for batch_idx, batch_ids in enumerate(batches):
+            is_last = batch_idx == len(batches) - 1
+            batch_set = set(batch_ids)
+
+            # Marca temporariamente lotes futuros como "enviados" para que
+            # _generate() inclua apenas o lote atual
+            already_sent = set(_sent_docs.get(session_id, set()))
+            future_ids = all_binary_ids - batch_set - already_sent
+            _sent_docs[session_id].update(future_ids)
+
+            if is_last:
+                batch_msg = message
+                batch_skill = skill_id
+            elif batch_idx == 0:
+                batch_msg = (
+                    f"[Lote 1/{len(batches)}] Analise cada comprovante acima e registre: "
+                    f"número do lançamento, fornecedor, valor, data e conformidade. "
+                    f"Seja objetivo. O relatório final será gerado após todos os lotes."
+                )
+                batch_skill = None
+            else:
+                batch_msg = (
+                    f"[Lote {batch_idx + 1}/{len(batches)}] Continue a análise dos "
+                    f"próximos comprovantes com o mesmo critério."
+                )
+                batch_skill = None
+
+            try:
+                async for chunk in self._generate(
+                    session_id, batch_msg, skill_id=batch_skill
+                ):
+                    # Suprime DONE dos lotes intermediários (stream permanece aberto)
+                    if not is_last and chunk == "data: [DONE]\n\n":
+                        continue
+                    # Interrompe se houve erro no Gemini
+                    if not is_last and '"error"' in chunk:
+                        yield chunk
+                        return
+                    yield chunk
+            finally:
+                # Restaura: remove IDs futuros marcados temporariamente
+                _sent_docs[session_id].difference_update(future_ids)
 
     async def _ensure_gemini_context(self, session_id: int) -> None:
         """Carrega histórico do banco para o contexto Gemini se ainda não estiver em memória."""

@@ -83,6 +83,44 @@ def _dict_to_text(data: dict, label: str) -> str:
     return f"=== {label} ===\n\n{json.dumps(data, ensure_ascii=False, indent=2)}"
 
 
+_COMPRESSIBLE_IMAGES = frozenset(
+    {"image/jpeg", "image/png", "image/bmp", "image/webp", "image/tiff", "image/gif"}
+)
+_MAX_IMAGE_KB = 120  # comprime imagens acima desse tamanho
+
+
+def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
+    """Comprime imagem para reduzir payload ao Gemini.
+
+    Converte para JPEG (quality=75, max 1600px) se resultar em arquivo menor.
+    Retorna (bytes, mime_type) — pode mudar o mime para image/jpeg.
+    """
+    if mime_type not in _COMPRESSIBLE_IMAGES or len(data) <= _MAX_IMAGE_KB * 1024:
+        return data, mime_type
+    try:
+        import io
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(data))
+        if img.mode in ("RGBA", "P", "LA"):
+            img = img.convert("RGB")
+        max_dim = 1600
+        if max(img.size) > max_dim:
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=75, optimize=True)
+        compressed = out.getvalue()
+        if len(compressed) < len(data):
+            logger.debug(
+                "Imagem comprimida %s: %d KB → %d KB",
+                mime_type, len(data) // 1024, len(compressed) // 1024,
+            )
+            return compressed, "image/jpeg"
+    except Exception as e:
+        logger.debug("Falha ao comprimir imagem (%s): %s", mime_type, e)
+    return data, mime_type
+
+
 def _detect_mime_type(data: bytes) -> str | None:
     """Detecta mime type a partir dos magic bytes."""
     if len(data) < 10:
@@ -646,6 +684,9 @@ class GoSatiService:
             desp = (despesas_info[link_idx] if despesas_info and link_idx < len(despesas_info) else None)
 
             for page_idx, (doc_bytes, mime_type) in enumerate(documents):
+                # Comprime imagens para reduzir payload ao Gemini
+                doc_bytes, mime_type = _compress_image(doc_bytes, mime_type)
+
                 ext = {
                     "image/jpeg": ".jpg",
                     "image/png": ".png",
