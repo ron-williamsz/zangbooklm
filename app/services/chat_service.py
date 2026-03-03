@@ -125,7 +125,21 @@ class ChatService:
             session_id, len(binary_ids), total_mb, len(batches),
         )
 
+        # IDs dos documentos de texto (leves) — só devem ir no lote final,
+        # não nos intermediários, para evitar que o Gemini liste todos os
+        # lançamentos da relação e marque como "comprovante não disponível"
+        text_doc_ids = {
+            src_id
+            for src_id, doc in _document_cache.get(session_id, {}).items()
+            if not isinstance(doc["content"], bytes)
+        }
+
+        # Salva comprimento do contexto ANTES dos lotes intermediários
+        # para colapsar o histórico antes do lote final
+        pre_batch_len = len(_gemini_contents[session_id])
+
         all_binary_ids = set(binary_ids)
+        intermediate_analyses: list[str] = []
 
         for batch_idx, batch_ids in enumerate(batches):
             is_last = batch_idx == len(batches) - 1
@@ -137,42 +151,62 @@ class ChatService:
             future_ids = all_binary_ids - batch_set - already_sent
             _sent_docs[session_id].update(future_ids)
 
-            if is_last:
-                batch_msg = message
-                batch_skill = skill_id
-            elif batch_idx == 0:
-                batch_msg = (
-                    "Analise os comprovantes acima. Para cada um registre: "
-                    "número do lançamento, beneficiário/fornecedor, valor e data. "
-                    "Não reproduza códigos de barras nem sequências numéricas longas. "
-                    "Seja objetivo — o relatório final será gerado após todos os lotes."
-                )
-                batch_skill = None
-            else:
-                batch_msg = (
-                    "Continue registrando os dados dos próximos comprovantes: "
-                    "lançamento, beneficiário, valor e data. "
-                    "Não reproduza códigos de barras nem linhas digitáveis."
-                )
-                batch_skill = None
-
             try:
                 if is_last:
-                    async for chunk in self._generate(session_id, batch_msg, skill_id=batch_skill):
+                    # Colapsa histórico intermediário: substitui por resumo compacto
+                    # para que o lote final veja contexto limpo + skill prompt
+                    _gemini_contents[session_id] = _gemini_contents[session_id][:pre_batch_len]
+                    if intermediate_analyses:
+                        combined = "\n\n".join(intermediate_analyses)
+                        _gemini_contents[session_id].append(
+                            Content(role="user", parts=[Part(text=(
+                                f"[Dados dos comprovantes processados nos lotes anteriores:]\n{combined}"
+                            ))])
+                        )
+                        _gemini_contents[session_id].append(
+                            Content(role="model", parts=[Part(text=(
+                                "Dados dos lotes anteriores registrados. Prosseguindo com o relatório final."
+                            ))])
+                        )
+
+                    async for chunk in self._generate(session_id, message, skill_id=skill_id):
                         yield chunk
+
                 else:
-                    # Suprime texto ao cliente nos lotes intermediários:
-                    # o contexto Gemini é construído internamente, mas o usuário
-                    # vê apenas um keepalive de progresso.
+                    # Lotes intermediários: suprime docs de texto para que o Gemini
+                    # veja APENAS os comprovantes binários desta mensagem
+                    _sent_docs[session_id].update(text_doc_ids)
+
                     yield f"data: {json.dumps({'progress': f'Analisando documentos — lote {batch_idx + 1} de {len(batches)}...'})}\n\n"
-                    async for chunk in self._generate(session_id, batch_msg, skill_id=batch_skill):
+
+                    batch_msg = (
+                        "Para cada comprovante (imagem ou PDF) visível nesta mensagem, "
+                        "registre: número do lançamento (se visível no documento), "
+                        "beneficiário/favorecido, valor e data. "
+                        "Não mencione lançamentos sem comprovante visível aqui."
+                    )
+
+                    async for chunk in self._generate(session_id, batch_msg, skill_id=None):
                         if '"error"' in chunk:
                             yield chunk
                             return
-                        # descarta texto — contexto já salvo em _gemini_contents
+                        # descarta texto ao cliente — contexto salvo internamente
+
+                    # Coleta resposta do modelo para o resumo final
+                    ctx = _gemini_contents.get(session_id, [])
+                    if ctx and ctx[-1].role == "model":
+                        parts = ctx[-1].parts
+                        if parts and hasattr(parts[0], "text") and parts[0].text:
+                            intermediate_analyses.append(
+                                f"Lote {batch_idx + 1}/{len(batches)}:\n{parts[0].text}"
+                            )
+
             finally:
                 # Restaura: remove IDs futuros marcados temporariamente
                 _sent_docs[session_id].difference_update(future_ids)
+                # Restaura docs de texto (disponíveis para o lote final)
+                if not is_last:
+                    _sent_docs[session_id].difference_update(text_doc_ids)
 
     async def _ensure_gemini_context(self, session_id: int) -> None:
         """Carrega histórico do banco para o contexto Gemini se ainda não estiver em memória."""
