@@ -7,6 +7,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import unquote
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -455,7 +456,6 @@ class GoSatiService:
         Retorna lista de (bytes, mime_type).
         """
         documents: list[tuple[bytes, str]] = []
-        empty_count = 0
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
                 resp = await client.get(link_docto)
@@ -467,7 +467,40 @@ class GoSatiService:
                     return documents
 
                 html = resp.text
-                # Tenta múltiplos padrões (GoSATI pode mudar o formato do redirect)
+                cookies = resp.cookies
+
+                # --- Novo formato GoSATI (2025+): PDF estático via ControlaPaineis ---
+                # Ex: ControlaPaineis(2, '/gocontroledocumentos/pdf.js/web/viewer.html
+                #       ?file=%2fgocontroledocumentos%2fTemp%2f20260303_Ct21460189%2f3940764.pdf', ...)
+                ctrl_match = re.search(
+                    r"ControlaPaineis\s*\(\s*2\s*,\s*'[^']*[?&]file=([^'&]+)", html
+                )
+                if ctrl_match:
+                    pdf_path = unquote(ctrl_match.group(1))
+                    pdf_url = f"https://sistemas.zangari.com.br{pdf_path}"
+                    logger.debug("ControlaPaineis PDF: %s", pdf_url)
+                    pdf_resp = await client.get(pdf_url, cookies=cookies)
+                    if pdf_resp.status_code == 200:
+                        mime = _detect_mime_type(pdf_resp.content)
+                        if mime:
+                            documents.append((pdf_resp.content, mime))
+                            logger.debug(
+                                "PDF baixado: %s (%d bytes, %s)",
+                                pdf_path, len(pdf_resp.content), mime,
+                            )
+                        else:
+                            logger.warning(
+                                "PDF baixado mas MIME não detectado (possível HTML de erro): %s",
+                                pdf_url,
+                            )
+                    else:
+                        logger.warning(
+                            "Falha ao baixar PDF ControlaPaineis (HTTP %d): %s",
+                            pdf_resp.status_code, pdf_url,
+                        )
+                    return documents
+
+                # --- Formato legado: Session=XXXXX → Show.aspx?ca=N ---
                 session_match = (
                     re.search(r"Session=(\d+)", html)
                     or re.search(r"Session=([A-Za-z0-9]+)", html)
@@ -476,8 +509,7 @@ class GoSatiService:
                 )
                 if not session_match:
                     logger.warning(
-                        "Session ID não encontrado no HTML do GoSATI — "
-                        "o formato do redirect pode ter mudado. URL: %s | "
+                        "Formato de comprovante não reconhecido. URL: %s | "
                         "Início do HTML: %s",
                         link_docto,
                         html[:600].replace("\n", " ").replace("\r", ""),
@@ -486,7 +518,7 @@ class GoSatiService:
 
                 session_id = session_match.group(1)
                 base_url = "https://sistemas.zangari.com.br/gocontroledocumentos/Show.aspx"
-                cookies = resp.cookies
+                empty_count = 0
 
                 for ca in range(20):
                     img_url = f"{base_url}?ca={ca}&or=2&Session={session_id}"
@@ -509,6 +541,7 @@ class GoSatiService:
                     empty_count += 1
                     if empty_count >= 2:
                         break
+
         except Exception as e:
             logger.warning("Erro ao baixar comprovante '%s': %s", link_docto, e)
         return documents

@@ -24,9 +24,10 @@ _document_cache: dict[int, dict[int, dict]] = defaultdict(dict)
 _sent_docs: dict[int, set[int]] = defaultdict(set)  # docs já enviados ao Gemini
 _gemini_contents: dict[int, list[Content]] = defaultdict(list)  # contexto Gemini em memória
 
-# Limite de binários (imagens) enviados por turno ao Gemini
-MAX_BINARY_BYTES_PER_TURN = 20 * 1024 * 1024  # 20 MB
-MAX_BINARY_FILES_PER_TURN = 50
+# Limite de binários (imagens/PDFs) enviados por turno ao Gemini.
+# PDFs com texto extraído são enviados como texto e não contam nesses limites.
+MAX_BINARY_BYTES_PER_TURN = 50 * 1024 * 1024  # 50 MB
+MAX_BINARY_FILES_PER_TURN = 200
 
 
 def clear_session_cache(session_id: int) -> None:
