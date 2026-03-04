@@ -82,10 +82,11 @@ class ChatService:
         self, session_id: int, skill_id: int, message: str
     ) -> AsyncGenerator[str, None]:
         """Chat com skill ativa — processa em lotes se houver muitos binários."""
-        _sent_docs.pop(session_id, None)
+        # Cada execução de skill = contexto LIMPO.
+        # Evita degradação por acúmulo de análises anteriores na mesma sessão.
+        await self.clear_history(session_id)
 
-        # Pré-carrega cache para avaliar volume antes de iniciar
-        await self._ensure_gemini_context(session_id)
+        # Pré-carrega cache de documentos (fontes da sessão, não histórico de chat)
         sources = await self.source_svc.list_by_session(session_id)
         for src in sources:
             if src.id not in _document_cache.get(session_id, {}):

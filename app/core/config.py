@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     gcp_access_token: str | None = None
 
     # Gemini
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-2.5-flash"
     gemini_location: str = "global"
     gemini_max_output_tokens: int = 8192
     gemini_temperature: float = 0.3

@@ -119,7 +119,7 @@ def _compress_image(data: bytes, mime_type: str) -> tuple[bytes, str]:
         img = Image.open(io.BytesIO(data))
         if img.mode in ("RGBA", "P", "LA"):
             img = img.convert("RGB")
-        max_dim = 1600
+        max_dim = 800
         if max(img.size) > max_dim:
             img.thumbnail((max_dim, max_dim), Image.LANCZOS)
         out = io.BytesIO()
