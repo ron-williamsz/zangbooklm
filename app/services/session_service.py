@@ -9,6 +9,7 @@ from app.models.session import Session
 from app.models.chat_message import ChatMessage as ChatMessageRecord
 from app.schemas.session import GoSatiSelection, SessionCreate
 from app.services.chat_service import clear_session_cache
+from app.services.gosati_service import clear_prestacao_cache
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,10 @@ class SessionService:
 
     async def delete(self, session_id: int) -> None:
         session = await self.get_by_id(session_id)
+        # Limpa cache de prestação GoSATI associado a esta sessão
+        if session.gosati_condominio_codigo and session.gosati_mes and session.gosati_ano:
+            cache_key = f"{session.gosati_condominio_codigo}_{session.gosati_mes}_{session.gosati_ano}"
+            clear_prestacao_cache(cache_key)
         # Remove mensagens de chat associadas
         stmt = select(ChatMessageRecord).where(ChatMessageRecord.session_id == session_id)
         result = await self.db.execute(stmt)

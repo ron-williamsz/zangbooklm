@@ -113,8 +113,12 @@ window.GoSati = {
         btn.classList.add('btn-loading');
 
         try {
-            // Detecta troca de condomínio — backend limpa sources+chat automaticamente
-            const condChanged = this._lastQuery && this._lastQuery.condominio !== data.condominio;
+            // Detecta troca de condomínio OU período — backend limpa sources+chat
+            const contextChanged = this._lastQuery && (
+                this._lastQuery.condominio !== data.condominio
+                || this._lastQuery.mes !== data.mes
+                || this._lastQuery.ano !== data.ano
+            );
 
             const result = await API.queryGoSati(sessionId, data);
             Utils.toast(`Dados carregados: ${result.label}`, 'success');
@@ -122,8 +126,8 @@ window.GoSati = {
             await this._saveSelection(sessionId);
             await Sources.loadSources();
 
-            // Se condomínio mudou, limpa chat visual (backend já limpou o histórico)
-            if (condChanged) {
+            // Se contexto mudou, limpa chat visual (backend já limpou o histórico)
+            if (contextChanged) {
                 const chatMessages = document.getElementById('chat-messages');
                 if (chatMessages) chatMessages.innerHTML = '';
                 const chatWelcome = document.getElementById('chat-welcome');

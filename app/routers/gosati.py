@@ -18,15 +18,17 @@ from app.schemas.gosati import (
     GoSatiSourceResponse,
 )
 from app.services.chat_service import ChatService
-from app.services.gosati_service import GoSatiError, GoSatiService
+from app.services.gosati_service import (
+    GoSatiError,
+    GoSatiService,
+    _prestacao_cache,
+    clear_prestacao_cache,
+)
 from app.services.source_service import SourceService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions/{session_id}/gosati", tags=["GoSATI"])
-
-# Cache em memória da prestação de contas (para listar comprovantes sem refazer SOAP)
-_prestacao_cache: dict[str, dict] = {}
 
 
 @router.post("/source", response_model=GoSatiSourceResponse)
@@ -37,18 +39,33 @@ async def add_gosati_source(
     settings: Settings = Depends(get_settings),
 ):
     """Consulta SOAP no GoSATI e salva resultado como Source do notebook."""
-    # Detecta troca de condomínio — limpa sources GoSATI + chat antigos
+    # Detecta troca de condomínio OU período — limpa sources GoSATI + chat antigos
     session = await db.get(Session, session_id)
-    old_cond = session.gosati_condominio_codigo if session else None
-    if old_cond and old_cond != data.condominio:
+    if session:
+        old_cond = session.gosati_condominio_codigo
+        old_mes = session.gosati_mes
+        old_ano = session.gosati_ano
+        context_changed = old_cond and (
+            old_cond != data.condominio
+            or old_mes != data.mes
+            or old_ano != data.ano
+        )
+    else:
+        context_changed = False
+
+    if context_changed:
         logger.info(
-            "Sessão %d: condomínio mudou de %s → %s, limpando dados antigos",
-            session_id, old_cond, data.condominio,
+            "Sessão %d: contexto mudou (cond %s/%s/%s → %s/%s/%s), limpando dados antigos",
+            session_id, old_cond, old_mes, old_ano,
+            data.condominio, data.mes, data.ano,
         )
         source_svc = SourceService(db)
         await source_svc.delete_by_origin(session_id, "gosati")
         chat_svc = ChatService(db, settings)
         await chat_svc.clear_history(session_id)
+        # Limpa cache de prestação do contexto anterior
+        old_key = f"{old_cond}_{old_mes}_{old_ano}"
+        _prestacao_cache.pop(old_key, None)
 
     svc = GoSatiService(db, settings)
     try:
@@ -156,6 +173,4 @@ async def reset_gosati(
     chat_svc = ChatService(db, settings)
     await chat_svc.clear_history(session_id)
     # Limpa cache de prestação
-    keys_to_remove = [k for k in _prestacao_cache if True]  # limpa tudo por segurança
-    for k in keys_to_remove:
-        _prestacao_cache.pop(k, None)
+    clear_prestacao_cache()

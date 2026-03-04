@@ -22,6 +22,21 @@ logger = logging.getLogger(__name__)
 
 GOSATI_DIR = BASE_DIR / "data" / "gosati"
 
+# Cache em memória da prestação de contas (evita refazer SOAP para listar comprovantes)
+_prestacao_cache: dict[str, dict] = {}
+
+
+def clear_prestacao_cache(key: str | None = None) -> None:
+    """Limpa cache de prestação de contas.
+
+    Se key fornecida (ex: '386_1_2026'), remove apenas essa entrada.
+    Se None, limpa tudo.
+    """
+    if key:
+        _prestacao_cache.pop(key, None)
+    else:
+        _prestacao_cache.clear()
+
 
 class GoSatiError(Exception):
     """Raised when GoSati API returns an error."""
