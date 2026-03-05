@@ -1,7 +1,9 @@
 """CRUD de Skills (admin)."""
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError
 from app.models.base import get_db
 from app.schemas.skill import (
     SkillCardResponse,
@@ -91,3 +93,26 @@ async def delete_example(
     skill_id: int, example_id: int, svc: SkillService = Depends(_svc)
 ):
     await svc.delete_example(skill_id, example_id)
+
+
+# --- Export / Import ---
+
+@router.get("/{skill_id}/export")
+async def export_skill(skill_id: int, svc: SkillService = Depends(_svc)):
+    """Exporta skill como arquivo ZIP (skill.json + examples/)."""
+    zip_buffer, filename = await svc.export_skill(skill_id)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/import", response_model=SkillResponse, status_code=201)
+async def import_skill(file: UploadFile = File(...), svc: SkillService = Depends(_svc)):
+    """Importa skill de um arquivo ZIP."""
+    content = await file.read()
+    try:
+        return await svc.import_skill(content)
+    except NotFoundError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)

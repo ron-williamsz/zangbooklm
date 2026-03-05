@@ -1,6 +1,9 @@
 """Serviço de gerenciamento de Skills."""
+import io
+import json
 import logging
 import os
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -167,6 +170,136 @@ class SkillService:
             pass
         await self.db.delete(example)
         await self.db.commit()
+
+    # --- Export / Import ---
+
+    async def export_skill(self, skill_id: int) -> tuple[io.BytesIO, str]:
+        """Exporta skill como ZIP (skill.json + examples/).
+
+        Returns (zip_buffer, suggested_filename).
+        """
+        skill = await self.get_by_id(skill_id)
+
+        # Monta JSON sem IDs internos
+        data = {
+            "version": 1,
+            "skill": {
+                "name": skill.name,
+                "description": skill.description,
+                "icon": skill.icon,
+                "color": skill.color,
+                "macro_instruction": skill.macro_instruction,
+                "execution_mode": skill.execution_mode,
+                "is_active": skill.is_active,
+            },
+            "steps": [
+                {
+                    "order": s.order,
+                    "title": s.title,
+                    "instruction": s.instruction,
+                    "expected_output": s.expected_output,
+                }
+                for s in sorted(skill.steps, key=lambda s: s.order)
+            ],
+            "examples": [
+                {
+                    "filename": ex.filename,
+                    "description": ex.description,
+                    "mime_type": ex.mime_type,
+                }
+                for ex in skill.examples
+            ],
+        }
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("skill.json", json.dumps(data, ensure_ascii=False, indent=2))
+            for ex in skill.examples:
+                file_path = Path(ex.file_path)
+                if file_path.exists():
+                    zf.write(file_path, f"examples/{ex.filename}")
+        buf.seek(0)
+
+        safe_name = skill.name.replace(" ", "_")[:30]
+        filename = f"skill_{safe_name}.zip"
+        return buf, filename
+
+    async def import_skill(self, zip_bytes: bytes) -> Skill:
+        """Importa skill de um arquivo ZIP.
+
+        Cria nova skill com steps e examples.
+        """
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+        except zipfile.BadZipFile:
+            raise NotFoundError(400, "Arquivo ZIP inválido")
+
+        if "skill.json" not in zf.namelist():
+            raise NotFoundError(400, "ZIP não contém skill.json")
+
+        raw = json.loads(zf.read("skill.json"))
+        skill_data = raw.get("skill", {})
+        steps_data = raw.get("steps", [])
+        examples_data = raw.get("examples", [])
+
+        if not skill_data.get("name"):
+            raise NotFoundError(400, "skill.json: campo 'name' obrigatório")
+
+        # Verificar nome duplicado
+        name = skill_data["name"]
+        existing = await self.db.execute(select(Skill).where(Skill.name == name))
+        if existing.scalars().first():
+            name = f"{name} (importado)"
+
+        skill = Skill(
+            name=name,
+            description=skill_data.get("description", ""),
+            icon=skill_data.get("icon", "\U0001f4cb"),
+            color=skill_data.get("color", "#6366f1"),
+            macro_instruction=skill_data.get("macro_instruction", ""),
+            execution_mode=skill_data.get("execution_mode", "chat"),
+            is_active=skill_data.get("is_active", True),
+        )
+        self.db.add(skill)
+        await self.db.flush()  # Gera skill.id sem commit
+
+        # Steps
+        for step_data in steps_data:
+            if not step_data.get("title", "").strip():
+                continue
+            step = SkillStep(
+                skill_id=skill.id,
+                order=step_data.get("order", 1),
+                title=step_data["title"],
+                instruction=step_data.get("instruction", ""),
+                expected_output=step_data.get("expected_output"),
+            )
+            self.db.add(step)
+
+        # Examples
+        example_dir = EXAMPLES_DIR / str(skill.id)
+        for ex_data in examples_data:
+            fname = ex_data.get("filename", "")
+            zip_path = f"examples/{fname}"
+            if not fname or zip_path not in zf.namelist():
+                continue
+            # Salva arquivo em disco
+            example_dir.mkdir(parents=True, exist_ok=True)
+            file_path = example_dir / fname
+            file_path.write_bytes(zf.read(zip_path))
+            # Cria registro no banco
+            example = SkillExample(
+                skill_id=skill.id,
+                filename=fname,
+                file_path=str(file_path),
+                description=ex_data.get("description", ""),
+                mime_type=ex_data.get("mime_type", "application/octet-stream"),
+            )
+            self.db.add(example)
+
+        await self.db.commit()
+        await self.db.refresh(skill, ["steps", "examples"])
+        return skill
 
     # --- Prompt Builder ---
 

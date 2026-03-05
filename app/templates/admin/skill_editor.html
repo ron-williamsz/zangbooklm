@@ -15,6 +15,13 @@
     <div class="admin-header">
         <h1 id="page-title">Nova Skill</h1>
         <div style="display:flex; gap:8px">
+            <button class="btn btn-outlined btn-sm hidden" id="btn-export" onclick="SkillEditor.exportSkill()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Exportar
+            </button>
             <button class="btn btn-danger btn-sm hidden" id="btn-delete" onclick="SkillEditor.deleteSkill()">Excluir</button>
             <button class="btn btn-primary btn-sm" id="btn-save" onclick="SkillEditor.save()">Salvar Skill</button>
         </div>

@@ -15,6 +15,7 @@ window.SkillEditor = {
             await this.loadSkill();
             document.getElementById('page-title').textContent = 'Editar Skill';
             document.getElementById('btn-delete').classList.remove('hidden');
+            document.getElementById('btn-export').classList.remove('hidden');
         }
     },
 
@@ -171,6 +172,7 @@ window.SkillEditor = {
                 history.replaceState(null, '', `/admin/skills/${skill.id}`);
                 document.getElementById('page-title').textContent = 'Editar Skill';
                 document.getElementById('btn-delete').classList.remove('hidden');
+                document.getElementById('btn-export').classList.remove('hidden');
             }
 
             // Salva etapas
@@ -219,6 +221,11 @@ window.SkillEditor = {
         } catch (e) {
             Utils.toast('Erro: ' + e.message, 'error');
         }
+    },
+
+    exportSkill() {
+        if (!this.skillId) return;
+        window.location.href = `/api/v1/skills/${this.skillId}/export`;
     }
 };
 
