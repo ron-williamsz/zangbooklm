@@ -3,6 +3,8 @@ import io
 import json
 import logging
 import os
+import re
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,7 +61,6 @@ class SkillService:
         # Remove arquivos de exemplo do disco
         example_dir = EXAMPLES_DIR / str(skill_id)
         if example_dir.exists():
-            import shutil
             shutil.rmtree(example_dir)
         await self.db.delete(skill)
         await self.db.commit()
@@ -220,8 +221,8 @@ class SkillService:
                     zf.write(file_path, f"examples/{ex.filename}")
         buf.seek(0)
 
-        safe_name = skill.name.replace(" ", "_")[:30]
-        filename = f"skill_{safe_name}.zip"
+        safe_name = re.sub(r'[^\w\-]', '_', skill.name)[:30].strip('_')
+        filename = f"skill_{safe_name or 'export'}.zip"
         return buf, filename
 
     async def import_skill(self, zip_bytes: bytes) -> Skill:
@@ -237,7 +238,11 @@ class SkillService:
         if "skill.json" not in zf.namelist():
             raise NotFoundError(400, "ZIP não contém skill.json")
 
-        raw = json.loads(zf.read("skill.json"))
+        try:
+            raw = json.loads(zf.read("skill.json"))
+        except json.JSONDecodeError:
+            raise NotFoundError(400, "skill.json contém JSON inválido")
+
         skill_data = raw.get("skill", {})
         steps_data = raw.get("steps", [])
         examples_data = raw.get("examples", [])
@@ -245,11 +250,22 @@ class SkillService:
         if not skill_data.get("name"):
             raise NotFoundError(400, "skill.json: campo 'name' obrigatório")
 
-        # Verificar nome duplicado
+        # Verificar nome duplicado (com dedup recursivo)
         name = skill_data["name"]
-        existing = await self.db.execute(select(Skill).where(Skill.name == name))
-        if existing.scalars().first():
-            name = f"{name} (importado)"
+        while True:
+            existing = await self.db.execute(select(Skill).where(Skill.name == name))
+            if not existing.scalars().first():
+                break
+            if "(importado" in name:
+                # Incrementa sufixo: "(importado)" → "(importado 2)" → "(importado 3)"
+                m = re.search(r'\(importado(?:\s+(\d+))?\)$', name)
+                if m:
+                    n = int(m.group(1) or 1) + 1
+                    name = re.sub(r'\(importado(?:\s+\d+)?\)$', f'(importado {n})', name)
+                else:
+                    name = f"{name} (importado)"
+            else:
+                name = f"{name} (importado)"
 
         skill = Skill(
             name=name,
@@ -276,28 +292,39 @@ class SkillService:
             )
             self.db.add(step)
 
-        # Examples
+        # Examples — com sanitização de filename contra path traversal
         example_dir = EXAMPLES_DIR / str(skill.id)
         for ex_data in examples_data:
             fname = ex_data.get("filename", "")
             zip_path = f"examples/{fname}"
             if not fname or zip_path not in zf.namelist():
                 continue
+            # Sanitiza: usa apenas o nome base, sem componentes de path
+            safe_fname = Path(fname).name
+            if not safe_fname or safe_fname.startswith('.'):
+                continue
             # Salva arquivo em disco
             example_dir.mkdir(parents=True, exist_ok=True)
-            file_path = example_dir / fname
+            file_path = example_dir / safe_fname
             file_path.write_bytes(zf.read(zip_path))
             # Cria registro no banco
             example = SkillExample(
                 skill_id=skill.id,
-                filename=fname,
+                filename=safe_fname,
                 file_path=str(file_path),
                 description=ex_data.get("description", ""),
                 mime_type=ex_data.get("mime_type", "application/octet-stream"),
             )
             self.db.add(example)
 
-        await self.db.commit()
+        try:
+            await self.db.commit()
+        except Exception:
+            # Cleanup: remove arquivos salvos em disco se commit falhar
+            if example_dir.exists():
+                shutil.rmtree(example_dir, ignore_errors=True)
+            raise
+
         await self.db.refresh(skill, ["steps", "examples"])
         return skill
 

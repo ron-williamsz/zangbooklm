@@ -73,6 +73,7 @@ class SkillResponse(BaseModel):
     icon: str
     color: str
     macro_instruction: str
+    execution_mode: str = "chat"
     is_active: bool
     created_at: datetime
     updated_at: datetime
